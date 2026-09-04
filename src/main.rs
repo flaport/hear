@@ -1,5 +1,6 @@
 mod audio;
 mod cli;
+mod dictionary;
 mod engines;
 mod formatter;
 mod output;
@@ -10,7 +11,7 @@ use anyhow::{Context, Result, bail};
 use clap::Parser;
 use tempfile::TempPath;
 
-use crate::cli::{Cli, Engine};
+use crate::cli::{Cli, Command, Engine};
 
 fn main() {
     if let Err(error) = run() {
@@ -22,7 +23,13 @@ fn main() {
 fn run() -> Result<()> {
     let cli = Cli::parse();
     cli.validate()?;
+    if let Some(Command::Dictionary { command }) = &cli.command {
+        return dictionary::run(command);
+    }
     output::preflight(&cli)?;
+
+    let dictionary = dictionary::Dictionary::load()?;
+    let vocabulary = dictionary.canonical_terms();
 
     let mut temporary_recording: Option<TempPath> = None;
     let input = if cli.record {
@@ -52,19 +59,22 @@ fn run() -> Result<()> {
     eprintln!("Transcribing with {}...", cli.engine);
 
     let raw_transcript = match cli.engine {
-        Engine::GptTranscribe => engines::openai::transcribe(&input)?,
-        Engine::Codex => engines::codex::transcribe(&input, cli.model.as_deref())?,
-        Engine::Whisper => {
-            engines::whisper::transcribe(&input, cli.model.as_deref().unwrap_or("tiny.en"))?
-        }
+        Engine::GptTranscribe => engines::openai::transcribe(&input, &vocabulary)?,
+        Engine::Codex => engines::codex::transcribe(&input, cli.model.as_deref(), &vocabulary)?,
+        Engine::Whisper => engines::whisper::transcribe(
+            &input,
+            cli.model.as_deref().unwrap_or("tiny.en"),
+            &vocabulary,
+        )?,
     };
+    let raw_transcript = dictionary.correct_aliases(&raw_transcript)?;
 
     if let Some(path) = cli.raw_output.as_deref() {
         output::write_transcript(&raw_transcript, Some(path), cli.force)?;
     }
     let transcript = if cli.should_polish() {
         eprintln!("Polishing transcript...");
-        formatter::polish(&raw_transcript, cli.context)?
+        formatter::polish(&raw_transcript, cli.context, &dictionary)?
     } else {
         raw_transcript
     };

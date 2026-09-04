@@ -11,7 +11,7 @@ use super::openai::{require_ffmpeg, run_ffmpeg};
 
 const MODEL_BASE_URL: &str = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main";
 
-pub fn transcribe(input: &Path, model: &str) -> Result<String> {
+pub fn transcribe(input: &Path, model: &str, vocabulary: &[String]) -> Result<String> {
     let model_path = ensure_model(model)?;
     let samples = load_audio(input)?;
     eprintln!("Running whisper.cpp model {model}...");
@@ -36,6 +36,9 @@ pub fn transcribe(input: &Path, model: &str) -> Result<String> {
     parameters.set_print_progress(false);
     parameters.set_print_realtime(false);
     parameters.set_print_timestamps(false);
+    if !vocabulary.is_empty() {
+        parameters.set_initial_prompt(&format!("Preferred spellings: {}.", vocabulary.join(", ")));
+    }
 
     state
         .full(parameters, &samples)

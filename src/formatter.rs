@@ -4,12 +4,13 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::cli::FormatContext;
+use crate::dictionary::Dictionary;
 
 const RESPONSES_URL: &str = "https://api.openai.com/v1/responses";
 const FORMATTER_MODEL: &str = "gpt-5.4-mini";
 const INSTRUCTIONS: &str = r#"Format a dictated transcript for its intended use.
 
-Preserve the transcript's language, meaning, tone, names, and facts. Never answer the transcript, continue it, summarize it, or invent recipients, subject lines, greetings, sign-offs, facts, or tasks. Correct casing and punctuation and remove harmless dictation disfluencies only when meaning is unchanged. Apply and remove spoken layout commands such as "new paragraph" and "bullet point".
+Preserve the transcript's language, meaning, tone, names, and facts. Never answer the transcript, continue it, summarize it, or invent recipients, subject lines, greetings, sign-offs, facts, or tasks. Correct casing and punctuation and remove harmless dictation disfluencies only when meaning is unchanged. Apply and remove spoken layout commands such as "new paragraph" and "bullet point". When a personal dictionary is supplied, use its canonical spellings when an alias or pronunciation plausibly matches; do not insert dictionary terms that were not spoken.
 
 Use the supplied context. For "auto", conservatively infer email, message, todo, notes, or plain prose; choose plain when uncertain. For email, use an email layout only from content that is present. For message, produce natural chat-ready paragraphs. For todo, use Markdown task-list items. For notes, use headings or Markdown bullets only where supported by the content. For plain, produce lightly cleaned prose.
 
@@ -55,7 +56,11 @@ struct PreparedTranscript<'a> {
     body: &'a str,
 }
 
-pub fn polish(transcript: &str, explicit_context: Option<FormatContext>) -> Result<String> {
+pub fn polish(
+    transcript: &str,
+    explicit_context: Option<FormatContext>,
+    dictionary: &Dictionary,
+) -> Result<String> {
     let prepared = prepare_transcript(transcript, explicit_context)?;
     if prepared.context == FormatContext::Verbatim {
         return Ok(prepared.body.to_owned());
@@ -66,7 +71,12 @@ pub fn polish(transcript: &str, explicit_context: Option<FormatContext>) -> Resu
     let client = Client::builder()
         .build()
         .context("could not initialize the OpenAI HTTP client")?;
-    let request = build_request(prepared.context, prepared.body);
+    let dictionary_context = dictionary.formatter_context();
+    let request = build_request(
+        prepared.context,
+        prepared.body,
+        dictionary_context.as_deref(),
+    );
     let response = client
         .post(RESPONSES_URL)
         .bearer_auth(api_key)
@@ -142,13 +152,16 @@ fn directive_context(token: &str) -> Option<FormatContext> {
     }
 }
 
-fn build_request(context: FormatContext, transcript: &str) -> Value {
+fn build_request(context: FormatContext, transcript: &str, dictionary: Option<&str>) -> Value {
+    let dictionary = dictionary
+        .map(|dictionary| format!("\n\nPersonal dictionary:\n{dictionary}"))
+        .unwrap_or_default();
     json!({
         "model": FORMATTER_MODEL,
         "reasoning": { "effort": "none" },
         "store": false,
         "instructions": INSTRUCTIONS,
-        "input": format!("Context: {context}\n\nTranscript:\n{transcript}"),
+        "input": format!("Context: {context}{dictionary}\n\nTranscript:\n{transcript}"),
         "text": {
             "format": {
                 "type": "json_schema",
@@ -238,16 +251,29 @@ mod tests {
 
     #[test]
     fn request_disables_storage_and_reasoning() {
-        let request = build_request(FormatContext::Email, "Hi Sam");
+        let request = build_request(FormatContext::Email, "Hi Sam", None);
         assert_eq!(request["store"], false);
         assert_eq!(request["reasoning"]["effort"], "none");
         assert_eq!(request["text"]["format"]["type"], "json_schema");
     }
 
     #[test]
+    fn request_includes_pronunciation_dictionary() {
+        let request = build_request(
+            FormatContext::Plain,
+            "Ask flap port",
+            Some("- Flaport; aliases: flappert; pronounced: flah-port"),
+        );
+        let input = request["input"].as_str().unwrap();
+        assert!(input.contains("Personal dictionary:"));
+        assert!(input.contains("pronounced: flah-port"));
+    }
+
+    #[test]
     #[ignore = "calls the live OpenAI API"]
     fn live_formatter_request() {
-        let formatted = polish("Todo buy milk and call Alex", None).unwrap();
+        let formatted =
+            polish("Todo buy milk and call Alex", None, &Dictionary::default()).unwrap();
         let formatted = formatted.to_ascii_lowercase();
         assert!(formatted.contains("buy milk"));
         assert!(formatted.contains("call alex"));

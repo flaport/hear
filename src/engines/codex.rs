@@ -6,7 +6,7 @@ use std::thread;
 
 use anyhow::{Context, Result, bail};
 
-pub fn transcribe(input: &Path, model: Option<&str>) -> Result<String> {
+pub fn transcribe(input: &Path, model: Option<&str>, vocabulary: &[String]) -> Result<String> {
     if std::env::var_os("HEAR_CODEX_ACTIVE").is_some() {
         bail!("the codex engine cannot recursively invoke hear");
     }
@@ -22,14 +22,22 @@ pub fn transcribe(input: &Path, model: Option<&str>) -> Result<String> {
         .tempfile()
         .context("could not create a temporary Codex result file")?;
 
+    let vocabulary_hint = if vocabulary.is_empty() {
+        String::new()
+    } else {
+        format!(
+            " Prefer these exact spellings when they match the audio: {}.",
+            vocabulary.join(", ")
+        )
+    };
     let prompt = format!(
         "Transcribe the spoken audio in the file at {path}. Return only the plain-text \
          transcript in your final response: no Markdown, commentary, timestamps, or speaker \
          labels. This is a best-effort task: you may use the network and already-installed \
          tools, but you must not invoke the `hear` command, modify the input file, or modify \
          the working directory. If transcription is impossible, explain why in the final \
-         response instead of fabricating a transcript.",
-        path = input.display()
+         response instead of fabricating a transcript.{vocabulary_hint}",
+        path = input.display(),
     );
 
     let mut command = Command::new("codex");

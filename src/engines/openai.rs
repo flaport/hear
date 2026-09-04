@@ -30,7 +30,7 @@ struct Uploads {
     _temporary_files: Option<TempDir>,
 }
 
-pub fn transcribe(input: &Path) -> Result<String> {
+pub fn transcribe(input: &Path, vocabulary: &[String]) -> Result<String> {
     let api_key = std::env::var("OPENAI_API_KEY").map_err(|_| {
         anyhow::anyhow!(
             "OPENAI_API_KEY is not set; set it or choose --engine codex/2 or --engine whisper/3"
@@ -46,16 +46,19 @@ pub fn transcribe(input: &Path) -> Result<String> {
         if uploads.paths.len() > 1 {
             eprintln!("Uploading part {} of {}...", index + 1, uploads.paths.len());
         }
-        transcripts.push(upload(&client, &api_key, path)?);
+        transcripts.push(upload(&client, &api_key, path, vocabulary)?);
     }
     Ok(transcripts.join("\n"))
 }
 
-fn upload(client: &Client, api_key: &str, path: &Path) -> Result<String> {
-    let form = multipart::Form::new()
+fn upload(client: &Client, api_key: &str, path: &Path, vocabulary: &[String]) -> Result<String> {
+    let mut form = multipart::Form::new()
         .text("model", "gpt-transcribe")
         .file("file", path)
         .with_context(|| format!("could not open audio for upload: {}", path.display()))?;
+    for term in vocabulary {
+        form = form.text("keywords[]", term.clone());
+    }
     let response = client
         .post(TRANSCRIPTIONS_URL)
         .bearer_auth(api_key)
@@ -221,5 +224,32 @@ mod tests {
         assert!(is_supported_upload(Path::new("message.M4A")));
         assert!(is_supported_upload(Path::new("message.webm")));
         assert!(!is_supported_upload(Path::new("message.flac")));
+    }
+
+    #[test]
+    #[ignore = "calls the live OpenAI API"]
+    fn live_transcription_accepts_dictionary_keywords() {
+        let api_key = std::env::var("OPENAI_API_KEY").unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("silence.wav");
+        let specification = hound::WavSpec {
+            channels: 1,
+            sample_rate: 16_000,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut writer = hound::WavWriter::create(&path, specification).unwrap();
+        for _ in 0..16_000 {
+            writer.write_sample(0_i16).unwrap();
+        }
+        writer.finalize().unwrap();
+
+        upload(
+            &Client::builder().build().unwrap(),
+            &api_key,
+            &path,
+            &["Flaport".to_owned()],
+        )
+        .unwrap();
     }
 }

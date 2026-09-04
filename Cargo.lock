@@ -580,6 +580,7 @@ dependencies = [
  "ctrlc",
  "directories",
  "hound",
+ "regex",
  "reqwest",
  "serde",
  "serde_json",

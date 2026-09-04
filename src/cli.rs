@@ -2,7 +2,7 @@ use std::fmt;
 use std::path::PathBuf;
 
 use anyhow::{Result, bail};
-use clap::{Parser, ValueEnum};
+use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum Engine {
@@ -52,9 +52,47 @@ impl fmt::Display for Engine {
     }
 }
 
+#[derive(Debug, Subcommand)]
+pub enum Command {
+    /// Manage words and names that should be transcribed consistently.
+    Dictionary {
+        #[command(subcommand)]
+        command: DictionaryCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum DictionaryCommand {
+    /// Add a term or update its aliases and pronunciation.
+    Add {
+        /// Canonical spelling to use in transcripts.
+        term: String,
+
+        /// Alternate or commonly mistranscribed form; may be repeated.
+        #[arg(long = "alias", value_name = "TEXT")]
+        aliases: Vec<String>,
+
+        /// A short pronunciation hint.
+        #[arg(long, value_name = "TEXT")]
+        sounds_like: Option<String>,
+    },
+
+    /// List saved dictionary entries.
+    List,
+
+    /// Remove an entry by its canonical spelling.
+    Remove {
+        /// Canonical spelling to remove.
+        term: String,
+    },
+}
+
 #[derive(Debug, Parser)]
 #[command(version, about)]
 pub struct Cli {
+    #[command(subcommand)]
+    pub command: Option<Command>,
+
     /// Audio file to transcribe.
     #[arg(value_name = "AUDIO", conflicts_with = "record")]
     pub input: Option<PathBuf>,
@@ -98,6 +136,22 @@ pub struct Cli {
 
 impl Cli {
     pub fn validate(&self) -> Result<()> {
+        if self.command.is_some() {
+            if self.input.is_some()
+                || self.record
+                || self.save_recording.is_some()
+                || self.engine != Engine::GptTranscribe
+                || self.model.is_some()
+                || self.output.is_some()
+                || self.polish
+                || self.context.is_some()
+                || self.raw_output.is_some()
+                || self.force
+            {
+                bail!("dictionary commands cannot be combined with transcription options");
+            }
+            return Ok(());
+        }
         if !self.record && self.input.is_none() {
             bail!("provide an audio file or use --record");
         }
@@ -217,6 +271,34 @@ mod tests {
             "result.txt",
         ])
         .unwrap();
+        assert!(cli.validate().is_err());
+    }
+
+    #[test]
+    fn parses_dictionary_add_command() {
+        let cli = Cli::try_parse_from([
+            "hear",
+            "dictionary",
+            "add",
+            "Flaport",
+            "--alias",
+            "flap port",
+            "--sounds-like",
+            "flah-port",
+        ])
+        .unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Command::Dictionary {
+                command: DictionaryCommand::Add { .. }
+            })
+        ));
+        assert!(cli.validate().is_ok());
+    }
+
+    #[test]
+    fn dictionary_command_rejects_transcription_options() {
+        let cli = Cli::try_parse_from(["hear", "--polish", "dictionary", "list"]).unwrap();
         assert!(cli.validate().is_err());
     }
 }

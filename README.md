@@ -68,6 +68,28 @@ Polishing uses `gpt-5.4-mini` through the OpenAI Responses API and requires
 was transcribed locally with whisper.cpp. Use `--raw-output PATH` with
 `--polish` to keep the original transcript alongside the formatted result.
 
+## Personal dictionary
+
+Save names and domain terms that should be spelled consistently:
+
+```sh
+hear dictionary add "Flaport" --sounds-like "flah-port"
+hear dictionary add "Qdrant" --alias "quadrant" --alias "Q drant"
+hear dictionary list
+hear dictionary remove "Qdrant"
+```
+
+The dictionary is stored as `hear/dictionary.json` in the platform's standard
+user configuration directory. Canonical terms are supplied to every
+transcription engine as vocabulary hints. Aliases are corrected as whole words
+after transcription, whether or not `--polish` is enabled.
+
+When polishing is enabled, aliases and `--sounds-like` pronunciation notes are
+also given to the formatter. Alias correction is deterministic; matching a
+pronunciation note is an LLM judgment and may be less reliable. Adding an
+existing canonical term updates it by merging new aliases and replacing the
+pronunciation when a new one is supplied.
+
 Transcribe locally with whisper.cpp:
 
 ```sh
