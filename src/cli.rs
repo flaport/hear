@@ -97,7 +97,7 @@ pub struct Cli {
     #[arg(value_name = "AUDIO", conflicts_with = "record")]
     pub input: Option<PathBuf>,
 
-    /// Record from the default microphone until Ctrl-C, then transcribe.
+    /// Record until Return; Ctrl-C cancels.
     #[arg(long, conflicts_with = "input")]
     pub record: bool,
 
@@ -117,13 +117,17 @@ pub struct Cli {
     #[arg(short, long, value_name = "PATH")]
     pub output: Option<PathBuf>,
 
-    /// Format the transcript for its inferred purpose using OpenAI.
-    #[arg(long)]
+    /// Explicitly enable automatic formatting (retained for compatibility).
+    #[arg(long, conflicts_with = "no_polish", hide = true)]
     pub polish: bool,
 
-    /// Formatting context; specifying it also enables polishing.
-    #[arg(long, value_enum, value_name = "CONTEXT")]
+    /// Formatting context instead of automatic inference.
+    #[arg(long, value_enum, value_name = "CONTEXT", conflicts_with = "no_polish")]
     pub context: Option<FormatContext>,
+
+    /// Skip LLM formatting and return the transcript directly.
+    #[arg(long)]
+    pub no_polish: bool,
 
     /// Save the unformatted transcript when polishing.
     #[arg(long, value_name = "PATH")]
@@ -145,6 +149,7 @@ impl Cli {
                 || self.output.is_some()
                 || self.polish
                 || self.context.is_some()
+                || self.no_polish
                 || self.raw_output.is_some()
                 || self.force
             {
@@ -159,7 +164,7 @@ impl Cli {
             bail!("--model is only valid with --engine codex or --engine whisper");
         }
         if self.raw_output.is_some() && !self.should_polish() {
-            bail!("--raw-output requires --polish or --context");
+            bail!("--raw-output cannot be used with --no-polish");
         }
         if let (Some(output), Some(recording)) = (&self.output, &self.save_recording)
             && paths_refer_to_same_file(output, recording)
@@ -190,7 +195,12 @@ impl Cli {
     }
 
     pub fn should_polish(&self) -> bool {
-        self.polish || self.context.is_some()
+        !self.no_polish
+    }
+
+    pub fn format_context(&self) -> Option<FormatContext> {
+        self.context
+            .filter(|context| *context != FormatContext::Auto)
     }
 }
 
@@ -210,6 +220,7 @@ mod tests {
     fn defaults_to_gpt_transcribe() {
         let cli = Cli::try_parse_from(["hear", "message.mp3"]).unwrap();
         assert_eq!(cli.engine, Engine::GptTranscribe);
+        assert!(cli.should_polish());
     }
 
     #[test]
@@ -255,8 +266,43 @@ mod tests {
 
     #[test]
     fn raw_output_requires_polishing() {
-        let cli = Cli::try_parse_from(["hear", "message.wav", "--raw-output", "raw.txt"]).unwrap();
+        let cli = Cli::try_parse_from([
+            "hear",
+            "message.wav",
+            "--no-polish",
+            "--raw-output",
+            "raw.txt",
+        ])
+        .unwrap();
         assert!(cli.validate().is_err());
+    }
+
+    #[test]
+    fn no_polish_disables_default_polishing() {
+        let cli = Cli::try_parse_from(["hear", "message.wav", "--no-polish"]).unwrap();
+        assert!(!cli.should_polish());
+        assert!(cli.validate().is_ok());
+    }
+
+    #[test]
+    fn legacy_polish_flag_is_still_accepted() {
+        let cli = Cli::try_parse_from(["hear", "message.wav", "--polish"]).unwrap();
+        assert!(cli.should_polish());
+        assert!(cli.validate().is_ok());
+    }
+
+    #[test]
+    fn explicit_auto_context_uses_automatic_directive_detection() {
+        let cli = Cli::try_parse_from(["hear", "message.wav", "--context", "auto"]).unwrap();
+        assert_eq!(cli.format_context(), None);
+    }
+
+    #[test]
+    fn no_polish_conflicts_with_context() {
+        assert!(
+            Cli::try_parse_from(["hear", "message.wav", "--no-polish", "--context", "email",])
+                .is_err()
+        );
     }
 
     #[test]
@@ -298,7 +344,7 @@ mod tests {
 
     #[test]
     fn dictionary_command_rejects_transcription_options() {
-        let cli = Cli::try_parse_from(["hear", "--polish", "dictionary", "list"]).unwrap();
+        let cli = Cli::try_parse_from(["hear", "--no-polish", "dictionary", "list"]).unwrap();
         assert!(cli.validate().is_err());
     }
 }

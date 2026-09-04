@@ -86,7 +86,7 @@ fn run() -> Result<RunOutcome> {
     }
     let transcript = if cli.should_polish() {
         eprintln!("Polishing transcript...");
-        formatter::polish(&raw_transcript, cli.context, &dictionary)?
+        formatter::polish(&raw_transcript, cli.format_context(), &dictionary)?
     } else {
         raw_transcript
     };
