@@ -6,6 +6,23 @@ whisper.cpp model.
 
 ## Build
 
+Tagged versions are built in GitHub Actions for Apple Silicon macOS and x86-64
+Linux. Download the archive for your platform from the repository's Releases
+page and verify it against `SHA256SUMS`.
+
+To publish a version, make sure the tag matches the version in `Cargo.toml`,
+then push it:
+
+```sh
+git tag 0.1.0
+git push origin 0.1.0
+```
+
+The release workflow caches Cargo dependencies and build output for subsequent
+tagged builds.
+
+To build locally instead:
+
 ```sh
 cargo build --release
 ```
