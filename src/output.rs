@@ -13,6 +13,9 @@ pub fn preflight(cli: &Cli) -> Result<()> {
     if let Some(path) = &cli.save_recording {
         ensure_writable_destination(path, cli.force, "recording")?;
     }
+    if let Some(path) = &cli.raw_output {
+        ensure_writable_destination(path, cli.force, "raw transcript")?;
+    }
     Ok(())
 }
 

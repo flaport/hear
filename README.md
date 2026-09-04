@@ -39,6 +39,35 @@ hear recording.m4a -o transcript.txt
 hear recording.m4a -o transcript.txt --force
 ```
 
+Polish a transcript for its inferred purpose after transcription:
+
+```sh
+hear recording.m4a --polish
+hear --record --polish --raw-output raw.txt
+hear recording.m4a --context email
+```
+
+`--context` accepts `auto`, `email`, `message` (or `text`), `todo` (or
+`tasks`), `notes` (or `note`), `plain`, and `verbatim`. Supplying a context
+also enables polishing. Without an explicit context, the first spoken word can
+act as a directive and is removed from the result:
+
+```text
+Email Sam, here is the proposal...  -> email
+Todo buy milk and call Alex...      -> todo
+Notes launch risks...               -> notes
+```
+
+An explicit `--context` takes precedence and preserves a directive-like first
+word, so `--context plain` is an escape hatch for text such as "Message
+received yesterday." `verbatim` removes a spoken directive but otherwise skips
+the formatting request.
+
+Polishing uses `gpt-5.4-mini` through the OpenAI Responses API and requires
+`OPENAI_API_KEY`. This means transcript text is sent to OpenAI even when audio
+was transcribed locally with whisper.cpp. Use `--raw-output PATH` with
+`--polish` to keep the original transcript alongside the formatted result.
+
 Transcribe locally with whisper.cpp:
 
 ```sh
@@ -82,4 +111,3 @@ transcription facility. It is intentionally best-effort.
 Supported files of at most 25 MB are uploaded directly. Other formats are
 converted with FFmpeg. Larger files produce a warning, then are compressed and
 split into 45-minute MP3 parts before sequential transcription.
-
