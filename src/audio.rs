@@ -1,17 +1,30 @@
+use std::io::{self, IsTerminal};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
+use std::thread;
 
 use anyhow::{Context, Result, bail};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Device, SampleFormat, Stream, StreamConfig};
 
 enum RecordingEvent {
-    Stop,
+    Finish,
+    Cancel,
+    InputError(String),
     StreamError(String),
 }
 
-pub fn record(destination: &Path) -> Result<()> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecordingOutcome {
+    Completed,
+    Cancelled,
+}
+
+pub fn record(destination: &Path) -> Result<RecordingOutcome> {
+    if !io::stdin().is_terminal() {
+        bail!("microphone recording requires an interactive terminal for Return to finish");
+    }
     let host = cpal::default_host();
     let device = host
         .default_input_device()
@@ -92,31 +105,52 @@ pub fn record(destination: &Path) -> Result<()> {
     }
     .context("could not open the default microphone")?;
 
+    let input_tx = event_tx.clone();
     let recording_active = Arc::new(AtomicBool::new(true));
     let signal_recording_active = Arc::clone(&recording_active);
     ctrlc::set_handler(move || {
         if signal_recording_active.swap(false, Ordering::SeqCst) {
-            let _ = event_tx.send(RecordingEvent::Stop);
+            let _ = event_tx.send(RecordingEvent::Cancel);
         } else {
             std::process::exit(130);
         }
     })
     .context("could not install the Ctrl-C recording handler")?;
 
-    eprintln!("Recording from the default microphone; press Ctrl-C to stop...");
+    eprintln!(
+        "Recording from the default microphone; press Return to transcribe or Ctrl-C to cancel..."
+    );
     stream
         .play()
         .context("could not start microphone recording")?;
 
-    match event_rx
+    let input_recording_active = Arc::clone(&recording_active);
+    thread::spawn(move || {
+        let mut input = String::new();
+        let event = match io::stdin().read_line(&mut input) {
+            Ok(0) => RecordingEvent::InputError("standard input was closed".to_owned()),
+            Ok(_) => RecordingEvent::Finish,
+            Err(error) => RecordingEvent::InputError(error.to_string()),
+        };
+        if input_recording_active.swap(false, Ordering::SeqCst) {
+            let _ = input_tx.send(event);
+        }
+    });
+
+    let event = event_rx
         .recv()
-        .context("recording control channel closed unexpectedly")?
-    {
-        RecordingEvent::Stop => {}
-        RecordingEvent::StreamError(error) => bail!("microphone recording failed: {error}"),
-    }
+        .context("recording control channel closed unexpectedly")?;
     drop(stream);
     recording_active.store(false, Ordering::SeqCst);
+    match event {
+        RecordingEvent::Finish => {}
+        RecordingEvent::Cancel => {
+            eprintln!("Recording cancelled.");
+            return Ok(RecordingOutcome::Cancelled);
+        }
+        RecordingEvent::InputError(error) => bail!("could not read recording controls: {error}"),
+        RecordingEvent::StreamError(error) => bail!("microphone recording failed: {error}"),
+    }
 
     let samples = Arc::try_unwrap(samples)
         .map_err(|_| anyhow::anyhow!("microphone recorder did not shut down cleanly"))?
@@ -133,7 +167,7 @@ pub fn record(destination: &Path) -> Result<()> {
     let normalized = resample_linear(&mono, sample_rate, 16_000);
     write_wav(destination, &normalized)?;
     eprintln!("Recording complete ({}).", destination.display());
-    Ok(())
+    Ok(RecordingOutcome::Completed)
 }
 
 fn build_stream<T, F, E>(

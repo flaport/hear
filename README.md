@@ -102,7 +102,7 @@ Supported model names are `tiny.en` (the fast default), `base.en`, `small.en`,
 to the platform's standard user cache directory (`hear/models`). macOS builds
 enable whisper.cpp's Metal backend; Linux uses CPU inference.
 
-Record from the default microphone until Ctrl-C, then transcribe:
+Record from the default microphone, then press Return to transcribe:
 
 ```sh
 hear --record
@@ -113,6 +113,8 @@ hear --record --save-recording message.wav
 Unless `--save-recording` is supplied, the normalized 16 kHz mono WAV recording
 is deleted after transcription. Progress and warnings go to stderr; the
 transcript alone goes to stdout or the requested output file.
+Ctrl-C cancels recording without saving or transcribing and exits with status
+130. Recording requires an interactive terminal so Return can be detected.
 
 ## Experimental Codex engine
 

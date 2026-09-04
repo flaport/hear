@@ -13,18 +13,28 @@ use tempfile::TempPath;
 
 use crate::cli::{Cli, Command, Engine};
 
+enum RunOutcome {
+    Completed,
+    Cancelled,
+}
+
 fn main() {
-    if let Err(error) = run() {
-        eprintln!("error: {error:#}");
-        std::process::exit(1);
+    match run() {
+        Ok(RunOutcome::Completed) => {}
+        Ok(RunOutcome::Cancelled) => std::process::exit(130),
+        Err(error) => {
+            eprintln!("error: {error:#}");
+            std::process::exit(1);
+        }
     }
 }
 
-fn run() -> Result<()> {
+fn run() -> Result<RunOutcome> {
     let cli = Cli::parse();
     cli.validate()?;
     if let Some(Command::Dictionary { command }) = &cli.command {
-        return dictionary::run(command);
+        dictionary::run(command)?;
+        return Ok(RunOutcome::Completed);
     }
     output::preflight(&cli)?;
 
@@ -47,7 +57,9 @@ fn run() -> Result<()> {
             }
         };
 
-        audio::record(&path)?;
+        if audio::record(&path)? == audio::RecordingOutcome::Cancelled {
+            return Ok(RunOutcome::Cancelled);
+        }
         path
     } else {
         cli.input
@@ -80,7 +92,7 @@ fn run() -> Result<()> {
     };
     output::write_transcript(&transcript, cli.output.as_deref(), cli.force)?;
     drop(temporary_recording);
-    Ok(())
+    Ok(RunOutcome::Completed)
 }
 
 fn validate_input(path: &Path) -> Result<()> {
