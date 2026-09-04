@@ -1,6 +1,6 @@
 [package]
 name = "hear"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 description = "A small CLI for transcribing audio with OpenAI, Codex, or whisper.cpp"
 license = "MIT"
