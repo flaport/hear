@@ -1,0 +1,28 @@
+[package]
+name = "hear"
+version = "0.1.0"
+edition = "2024"
+description = "A small CLI for transcribing audio with OpenAI, Codex, or whisper.cpp"
+license = "MIT"
+
+[dependencies]
+anyhow = "1.0"
+clap = { version = "4.5", features = ["derive"] }
+cpal = "0.18"
+ctrlc = "3.5"
+directories = "6.0"
+hound = "3.5"
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "json", "multipart", "rustls"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tempfile = "3.23"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+whisper-rs = { version = "0.16", features = ["metal"] }
+
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+whisper-rs = "0.16"
+
+[profile.release]
+lto = "thin"
+strip = true
