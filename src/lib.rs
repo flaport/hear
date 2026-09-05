@@ -1,6 +1,7 @@
 //! Reusable OpenAI transcription and transcript-polishing API.
 
 mod context;
+mod ffmpeg;
 mod formatter;
 #[path = "engines/openai.rs"]
 mod openai;

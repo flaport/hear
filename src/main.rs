@@ -2,6 +2,7 @@ mod audio;
 mod cli;
 mod dictionary;
 mod engines;
+mod ffmpeg;
 mod output;
 
 use std::path::Path;

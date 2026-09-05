@@ -57,6 +57,9 @@ jobs:
       - name: Build release binary
         run: cargo build --locked --release --target "${{ matrix.target }}"
 
+      - name: Verify library-only build
+        run: cargo build --locked --release --no-default-features --lib --target "${{ matrix.target }}"
+
       - name: Package binary
         shell: bash
         run: |

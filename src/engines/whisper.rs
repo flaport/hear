@@ -7,7 +7,7 @@ use directories::BaseDirs;
 use reqwest::blocking::Client;
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
-use super::openai::{require_ffmpeg, run_ffmpeg};
+use crate::ffmpeg::{require_ffmpeg, run_ffmpeg};
 
 const MODEL_BASE_URL: &str = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main";
 
