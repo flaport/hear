@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 use crate::FormatContext;
 
 const RESPONSES_URL: &str = "https://api.openai.com/v1/responses";
-const FORMATTER_MODEL: &str = "gpt-5.4-mini";
+const FORMATTER_MODEL: &str = "gpt-5.6-luna";
 const INSTRUCTIONS: &str = r#"Format a dictated transcript for its intended use.
 
 Preserve the transcript's language, meaning, tone, names, and facts. Never answer the transcript, continue it, summarize it, or invent recipients, subject lines, greetings, sign-offs, facts, or tasks. Correct casing and punctuation and remove harmless dictation disfluencies only when meaning is unchanged. Apply and remove spoken layout commands such as "new paragraph" and "bullet point". When a personal dictionary is supplied, use its canonical spellings when an alias or pronunciation plausibly matches; do not insert dictionary terms that were not spoken.
