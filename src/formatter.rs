@@ -59,6 +59,7 @@ pub fn polish(
     transcript: &str,
     explicit_context: Option<FormatContext>,
     dictionary_context: Option<&str>,
+    custom_instruction: Option<&str>,
 ) -> Result<String> {
     let prepared = prepare_transcript(transcript, explicit_context)?;
     if prepared.context == FormatContext::Verbatim {
@@ -70,7 +71,12 @@ pub fn polish(
     let client = Client::builder()
         .build()
         .context("could not initialize the OpenAI HTTP client")?;
-    let request = build_request(prepared.context, prepared.body, dictionary_context);
+    let request = build_request(
+        prepared.context,
+        prepared.body,
+        dictionary_context,
+        custom_instruction,
+    );
     let response = client
         .post(RESPONSES_URL)
         .bearer_auth(api_key)
@@ -146,16 +152,26 @@ fn directive_context(token: &str) -> Option<FormatContext> {
     }
 }
 
-fn build_request(context: FormatContext, transcript: &str, dictionary: Option<&str>) -> Value {
+fn build_request(
+    context: FormatContext,
+    transcript: &str,
+    dictionary: Option<&str>,
+    custom_instruction: Option<&str>,
+) -> Value {
     let dictionary = dictionary
         .map(|dictionary| format!("\n\nPersonal dictionary:\n{dictionary}"))
+        .unwrap_or_default();
+    let custom_instruction = custom_instruction
+        .map(str::trim)
+        .filter(|instruction| !instruction.is_empty())
+        .map(|instruction| format!("\n\nAdditional formatting instruction:\n{instruction}"))
         .unwrap_or_default();
     json!({
         "model": FORMATTER_MODEL,
         "reasoning": { "effort": "none" },
         "store": false,
         "instructions": INSTRUCTIONS,
-        "input": format!("Context: {context}{dictionary}\n\nTranscript:\n{transcript}"),
+        "input": format!("Context: {context}{dictionary}{custom_instruction}\n\nTranscript:\n{transcript}"),
         "text": {
             "format": {
                 "type": "json_schema",
@@ -245,7 +261,7 @@ mod tests {
 
     #[test]
     fn request_disables_storage_and_reasoning() {
-        let request = build_request(FormatContext::Email, "Hi Sam", None);
+        let request = build_request(FormatContext::Email, "Hi Sam", None, None);
         assert_eq!(request["store"], false);
         assert_eq!(request["reasoning"]["effort"], "none");
         assert_eq!(request["text"]["format"]["type"], "json_schema");
@@ -257,6 +273,7 @@ mod tests {
             FormatContext::Plain,
             "Ask flap port",
             Some("- Flaport; aliases: flappert; pronounced: flah-port"),
+            None,
         );
         let input = request["input"].as_str().unwrap();
         assert!(input.contains("Personal dictionary:"));
@@ -264,9 +281,22 @@ mod tests {
     }
 
     #[test]
+    fn request_includes_custom_formatting_instruction() {
+        let request = build_request(
+            FormatContext::Plain,
+            "Find completed tasks.",
+            None,
+            Some("Return a search query without terminal punctuation."),
+        );
+        let input = request["input"].as_str().unwrap();
+        assert!(input.contains("Additional formatting instruction:"));
+        assert!(input.contains("without terminal punctuation"));
+    }
+
+    #[test]
     #[ignore = "calls the live OpenAI API"]
     fn live_formatter_request() {
-        let formatted = polish("Todo buy milk and call Alex", None, None).unwrap();
+        let formatted = polish("Todo buy milk and call Alex", None, None, None).unwrap();
         let formatted = formatted.to_ascii_lowercase();
         assert!(formatted.contains("buy milk"));
         assert!(formatted.contains("call alex"));

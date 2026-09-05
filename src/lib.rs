@@ -33,7 +33,7 @@ pub fn transcribe_openai(
 ) -> Result<Transcript> {
     let raw = openai::transcribe(input, vocabulary)?;
     let text = if polish {
-        formatter::polish(&raw, context, dictionary_context)?
+        formatter::polish(&raw, context, dictionary_context, None)?
     } else {
         raw.clone()
     };
@@ -46,5 +46,30 @@ pub fn polish(
     context: Option<FormatContext>,
     dictionary_context: Option<&str>,
 ) -> Result<String> {
-    formatter::polish(transcript, context, dictionary_context)
+    formatter::polish(transcript, context, dictionary_context, None)
+}
+
+/// Transcribe an audio file with OpenAI and polish it with an additional
+/// caller-supplied formatting instruction.
+pub fn transcribe_openai_with_instruction(
+    input: &Path,
+    vocabulary: &[String],
+    context: Option<FormatContext>,
+    dictionary_context: Option<&str>,
+    instruction: &str,
+) -> Result<Transcript> {
+    let raw = openai::transcribe(input, vocabulary)?;
+    let text = formatter::polish(&raw, context, dictionary_context, Some(instruction))?;
+    Ok(Transcript { raw, text })
+}
+
+/// Polish an existing transcript with an additional caller-supplied
+/// formatting instruction.
+pub fn polish_with_instruction(
+    transcript: &str,
+    context: Option<FormatContext>,
+    dictionary_context: Option<&str>,
+    instruction: &str,
+) -> Result<String> {
+    formatter::polish(transcript, context, dictionary_context, Some(instruction))
 }
