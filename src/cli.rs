@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{fmt, path::PathBuf};
 
 use anyhow::{Result, bail};
 use clap::{Parser, Subcommand, ValueEnum};
@@ -14,7 +14,7 @@ pub enum Engine {
     Whisper,
 }
 
-impl std::fmt::Display for Engine {
+impl fmt::Display for Engine {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
             Self::GptTranscribe => "gpt-transcribe",
