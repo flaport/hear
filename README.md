@@ -154,3 +154,24 @@ transcription facility. It is intentionally best-effort.
 Supported files of at most 25 MB are uploaded directly. Other formats are
 converted with FFmpeg. Larger files produce a warning, then are compressed and
 split into 45-minute MP3 parts before sequential transcription.
+## Rust library
+
+`hear` can be embedded without its microphone, CLI, or local Whisper dependencies:
+
+```toml
+hear = { git = "https://github.com/flaport/hear", tag = "0.2.0", default-features = false }
+```
+
+```rust
+let transcript = hear::transcribe_openai(
+    std::path::Path::new("note.webm"),
+    &[],
+    true,
+    Some(hear::FormatContext::Notes),
+    None,
+)?;
+println!("{}", transcript.text);
+```
+
+The library reads `OPENAI_API_KEY` from the environment. Enable the default
+`cli` feature to build the full `hear` binary with recording and local Whisper.

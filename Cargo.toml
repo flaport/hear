@@ -1,17 +1,26 @@
 [package]
 name = "hear"
-version = "0.1.3"
+version = "0.2.0"
 edition = "2024"
-description = "A small CLI for transcribing audio with OpenAI, Codex, or whisper.cpp"
+description = "A Rust library and CLI for transcribing audio with OpenAI, Codex, or whisper.cpp"
 license = "MIT"
+
+[features]
+default = ["cli"]
+cli = ["dep:clap", "dep:cpal", "dep:ctrlc", "dep:directories", "dep:hound", "dep:whisper-rs"]
+
+[[bin]]
+name = "hear"
+path = "src/main.rs"
+required-features = ["cli"]
 
 [dependencies]
 anyhow = "1.0"
-clap = { version = "4.5", features = ["derive"] }
-cpal = "0.18"
-ctrlc = "3.5"
-directories = "6.0"
-hound = "3.5"
+clap = { version = "4.5", features = ["derive"], optional = true }
+cpal = { version = "0.18", optional = true }
+ctrlc = { version = "3.5", optional = true }
+directories = { version = "6.0", optional = true }
+hound = { version = "3.5", optional = true }
 reqwest = { version = "0.13", default-features = false, features = ["blocking", "json", "multipart", "rustls"] }
 regex = "1.12"
 serde = { version = "1.0", features = ["derive"] }
@@ -19,10 +28,10 @@ serde_json = "1.0"
 tempfile = "3.23"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-whisper-rs = { version = "0.16", features = ["metal"] }
+whisper-rs = { version = "0.16", features = ["metal"], optional = true }
 
 [target.'cfg(not(target_os = "macos"))'.dependencies]
-whisper-rs = "0.16"
+whisper-rs = { version = "0.16", optional = true }
 
 [profile.release]
 lto = "thin"

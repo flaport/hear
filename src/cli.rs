@@ -1,8 +1,8 @@
-use std::fmt;
 use std::path::PathBuf;
 
 use anyhow::{Result, bail};
 use clap::{Parser, Subcommand, ValueEnum};
+use hear::FormatContext;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum Engine {
@@ -14,35 +14,7 @@ pub enum Engine {
     Whisper,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-pub enum FormatContext {
-    Auto,
-    Email,
-    #[value(alias = "text")]
-    Message,
-    #[value(alias = "tasks")]
-    Todo,
-    #[value(alias = "note")]
-    Notes,
-    Plain,
-    Verbatim,
-}
-
-impl fmt::Display for FormatContext {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(match self {
-            Self::Auto => "auto",
-            Self::Email => "email",
-            Self::Message => "message",
-            Self::Todo => "todo",
-            Self::Notes => "notes",
-            Self::Plain => "plain",
-            Self::Verbatim => "verbatim",
-        })
-    }
-}
-
-impl fmt::Display for Engine {
+impl std::fmt::Display for Engine {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
             Self::GptTranscribe => "gpt-transcribe",

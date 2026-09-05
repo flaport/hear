@@ -2,7 +2,6 @@ mod audio;
 mod cli;
 mod dictionary;
 mod engines;
-mod formatter;
 mod output;
 
 use std::path::Path;
@@ -71,7 +70,9 @@ fn run() -> Result<RunOutcome> {
     eprintln!("Transcribing with {}...", cli.engine);
 
     let raw_transcript = match cli.engine {
-        Engine::GptTranscribe => engines::openai::transcribe(&input, &vocabulary)?,
+        Engine::GptTranscribe => {
+            hear::transcribe_openai(&input, &vocabulary, false, None, None)?.raw
+        }
         Engine::Codex => engines::codex::transcribe(&input, cli.model.as_deref(), &vocabulary)?,
         Engine::Whisper => engines::whisper::transcribe(
             &input,
@@ -86,7 +87,12 @@ fn run() -> Result<RunOutcome> {
     }
     let transcript = if cli.should_polish() {
         eprintln!("Polishing transcript...");
-        formatter::polish(&raw_transcript, cli.format_context(), &dictionary)?
+        let dictionary_context = dictionary.formatter_context();
+        hear::polish(
+            &raw_transcript,
+            cli.format_context(),
+            dictionary_context.as_deref(),
+        )?
     } else {
         raw_transcript
     };

@@ -3,8 +3,7 @@ use reqwest::blocking::Client;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::cli::FormatContext;
-use crate::dictionary::Dictionary;
+use crate::FormatContext;
 
 const RESPONSES_URL: &str = "https://api.openai.com/v1/responses";
 const FORMATTER_MODEL: &str = "gpt-5.4-mini";
@@ -59,7 +58,7 @@ struct PreparedTranscript<'a> {
 pub fn polish(
     transcript: &str,
     explicit_context: Option<FormatContext>,
-    dictionary: &Dictionary,
+    dictionary_context: Option<&str>,
 ) -> Result<String> {
     let prepared = prepare_transcript(transcript, explicit_context)?;
     if prepared.context == FormatContext::Verbatim {
@@ -71,12 +70,7 @@ pub fn polish(
     let client = Client::builder()
         .build()
         .context("could not initialize the OpenAI HTTP client")?;
-    let dictionary_context = dictionary.formatter_context();
-    let request = build_request(
-        prepared.context,
-        prepared.body,
-        dictionary_context.as_deref(),
-    );
+    let request = build_request(prepared.context, prepared.body, dictionary_context);
     let response = client
         .post(RESPONSES_URL)
         .bearer_auth(api_key)
@@ -272,8 +266,7 @@ mod tests {
     #[test]
     #[ignore = "calls the live OpenAI API"]
     fn live_formatter_request() {
-        let formatted =
-            polish("Todo buy milk and call Alex", None, &Dictionary::default()).unwrap();
+        let formatted = polish("Todo buy milk and call Alex", None, None).unwrap();
         let formatted = formatted.to_ascii_lowercase();
         assert!(formatted.contains("buy milk"));
         assert!(formatted.contains("call alex"));
