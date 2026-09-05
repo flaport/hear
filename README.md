@@ -159,7 +159,7 @@ split into 45-minute MP3 parts before sequential transcription.
 `hear` can be embedded without its microphone, CLI, or local Whisper dependencies:
 
 ```toml
-hear = { git = "https://github.com/flaport/hear", tag = "0.2.3", default-features = false }
+hear = { git = "https://github.com/flaport/hear", tag = "0.2.4", default-features = false }
 ```
 
 ```rust
