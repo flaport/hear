@@ -14,7 +14,7 @@ notes are updated here before the stage is committed and pushed to `main`.
 | 2 | Complete | Split OpenAI transcription and harden upload preparation. |
 | 3 | Complete | Split transcript polishing by responsibility. |
 | 4 | Complete | Introduce options-based public library APIs. |
-| 5 | Pending | Split microphone capture, processing, and WAV output. |
+| 5 | Complete | Split microphone capture, processing, and WAV output. |
 | 6 | Pending | Harden local Whisper configuration and model downloads. |
 | 7 | Pending | Add continuous CI and synchronize documentation. |
 | 8 | Pending | Run final verification and reconcile the roadmap. |
@@ -26,7 +26,7 @@ notes are updated here before the stage is committed and pushed to `main`.
 - [x] Stage 2 — OpenAI transcription and uploads
 - [x] Stage 3 — Transcript polishing
 - [x] Stage 4 — Options-based library API
-- [ ] Stage 5 — Microphone recording internals
+- [x] Stage 5 — Microphone recording internals
 - [ ] Stage 6 — Whisper hardening
 - [ ] Stage 7 — Continuous verification and documentation
 - [ ] Stage 8 — Final verification
@@ -198,7 +198,7 @@ Completed:
 
 ## Stage 5 — Microphone recording internals
 
-State: Pending
+State: Complete
 
 Objectives:
 
@@ -216,6 +216,25 @@ Acceptance:
   and representative resampling behavior.
 - The recorded output remains 16-bit, mono, 16 kHz WAV.
 - CLI behavior remains unchanged.
+
+Completed:
+
+- Replaced `src/audio.rs` with separate capture/control, signal-processing, WAV
+  output, and orchestration modules under `src/audio/`.
+- Added a stateful `MonoBuffer` that downmixes frames inside the audio callback
+  and correctly carries partial frames across callback boundaries. Long stereo
+  recordings now retain one mono sample per frame instead of both raw channels.
+- Split upsampling and downsampling paths. Downsampling now averages a local
+  window before rate conversion to attenuate frequencies that would otherwise
+  alias into the 16 kHz recording.
+- Added tests for callback boundaries, incomplete frames, output length,
+  constant-signal preservation, high-frequency attenuation, clipping, and the
+  exact mono/16 kHz/16-bit WAV format.
+- Preserved interactive completion, Ctrl-C cancellation, output messages, and
+  status 130 behavior.
+- Ran formatting, warnings-as-errors Clippy, full-feature tests, and
+  library-only tests. All 46 non-live tests passed; the 2 live OpenAI tests
+  remained intentionally ignored in each applicable test run.
 
 ## Stage 6 — Whisper hardening
 

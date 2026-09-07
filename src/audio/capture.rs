@@ -1,5 +1,4 @@
 use std::io::{self, IsTerminal};
-use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
@@ -8,6 +7,8 @@ use anyhow::{Context, Result, bail};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Device, SampleFormat, Stream, StreamConfig};
 
+use super::processing::MonoBuffer;
+
 enum RecordingEvent {
     Finish,
     Cancel,
@@ -15,13 +16,12 @@ enum RecordingEvent {
     StreamError(String),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RecordingOutcome {
-    Completed,
-    Cancelled,
+pub(super) struct CapturedAudio {
+    pub(super) samples: Vec<f32>,
+    pub(super) sample_rate: u32,
 }
 
-pub fn record(destination: &Path) -> Result<RecordingOutcome> {
+pub(super) fn capture() -> Result<Option<CapturedAudio>> {
     if !io::stdin().is_terminal() {
         bail!("microphone recording requires an interactive terminal for Return to finish");
     }
@@ -37,7 +37,7 @@ pub fn record(destination: &Path) -> Result<RecordingOutcome> {
     let channels = usize::from(config.channels);
     let sample_rate = config.sample_rate;
 
-    let samples = Arc::new(Mutex::new(Vec::<f32>::new()));
+    let samples = Arc::new(Mutex::new(MonoBuffer::new(channels)));
     let (event_tx, event_rx) = mpsc::channel();
     let error_tx = event_tx.clone();
     let error_callback = move |error: cpal::Error| {
@@ -146,7 +146,7 @@ pub fn record(destination: &Path) -> Result<RecordingOutcome> {
         RecordingEvent::Finish => {}
         RecordingEvent::Cancel => {
             eprintln!("Recording cancelled.");
-            return Ok(RecordingOutcome::Cancelled);
+            return Ok(None);
         }
         RecordingEvent::InputError(error) => bail!("could not read recording controls: {error}"),
         RecordingEvent::StreamError(error) => bail!("microphone recording failed: {error}"),
@@ -155,25 +155,21 @@ pub fn record(destination: &Path) -> Result<RecordingOutcome> {
     let samples = Arc::try_unwrap(samples)
         .map_err(|_| anyhow::anyhow!("microphone recorder did not shut down cleanly"))?
         .into_inner()
-        .map_err(|_| anyhow::anyhow!("microphone sample buffer was poisoned"))?;
+        .map_err(|_| anyhow::anyhow!("microphone sample buffer was poisoned"))?
+        .finish();
     if samples.is_empty() {
         bail!("the microphone recording contained no audio");
     }
-
-    let mono = downmix(&samples, channels);
-    if mono.is_empty() {
-        bail!("the microphone recording was too short to contain an audio frame");
-    }
-    let normalized = resample_linear(&mono, sample_rate, 16_000);
-    write_wav(destination, &normalized)?;
-    eprintln!("Recording complete ({}).", destination.display());
-    Ok(RecordingOutcome::Completed)
+    Ok(Some(CapturedAudio {
+        samples,
+        sample_rate,
+    }))
 }
 
 fn build_stream<T, F, E>(
     device: &Device,
     config: &StreamConfig,
-    samples: &Arc<Mutex<Vec<f32>>>,
+    samples: &Arc<Mutex<MonoBuffer>>,
     convert: F,
     error_callback: E,
 ) -> Result<Stream, cpal::Error>
@@ -193,65 +189,4 @@ where
         error_callback,
         None,
     )
-}
-
-fn downmix(samples: &[f32], channels: usize) -> Vec<f32> {
-    samples
-        .chunks_exact(channels)
-        .map(|frame| frame.iter().sum::<f32>() / channels as f32)
-        .collect()
-}
-
-fn resample_linear(samples: &[f32], source_rate: u32, target_rate: u32) -> Vec<f32> {
-    if source_rate == target_rate {
-        return samples.to_vec();
-    }
-    let output_len = samples.len() * target_rate as usize / source_rate as usize;
-    let ratio = source_rate as f64 / target_rate as f64;
-    (0..output_len)
-        .map(|index| {
-            let position = index as f64 * ratio;
-            let left = position.floor() as usize;
-            let right = (left + 1).min(samples.len() - 1);
-            let fraction = (position - left as f64) as f32;
-            samples[left] * (1.0 - fraction) + samples[right] * fraction
-        })
-        .collect()
-}
-
-fn write_wav(path: &Path, samples: &[f32]) -> Result<()> {
-    let specification = hound::WavSpec {
-        channels: 1,
-        sample_rate: 16_000,
-        bits_per_sample: 16,
-        sample_format: hound::SampleFormat::Int,
-    };
-    let mut writer = hound::WavWriter::create(path, specification)
-        .with_context(|| format!("could not create recording: {}", path.display()))?;
-    for sample in samples {
-        let sample = (sample.clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
-        writer
-            .write_sample(sample)
-            .context("could not write microphone samples")?;
-    }
-    writer
-        .finalize()
-        .context("could not finalize WAV recording")?;
-    Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn downmixes_stereo() {
-        assert_eq!(downmix(&[1.0, -1.0, 0.5, 0.5], 2), vec![0.0, 0.5]);
-    }
-
-    #[test]
-    fn resamples_to_expected_length() {
-        let samples = vec![0.0; 48_000];
-        assert_eq!(resample_linear(&samples, 48_000, 16_000).len(), 16_000);
-    }
 }
