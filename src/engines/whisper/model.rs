@@ -11,44 +11,44 @@ const MODEL_BASE_URL: &str = "https://huggingface.co/ggerganov/whisper.cpp/resol
 
 pub(super) struct Model {
     pub(super) name: &'static str,
-    filename: &'static str,
     bytes: u64,
     sha256: &'static str,
     pub(super) multilingual: bool,
 }
 
+impl Model {
+    fn filename(&self) -> String {
+        format!("ggml-{}.bin", self.name)
+    }
+}
+
 const MODELS: &[Model] = &[
     Model {
         name: "tiny.en",
-        filename: "ggml-tiny.en.bin",
         bytes: 77_704_715,
         sha256: "921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f",
         multilingual: false,
     },
     Model {
         name: "base.en",
-        filename: "ggml-base.en.bin",
         bytes: 147_964_211,
         sha256: "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002",
         multilingual: false,
     },
     Model {
         name: "small.en",
-        filename: "ggml-small.en.bin",
         bytes: 487_614_201,
         sha256: "c6138d6d58ecc8322097e0f987c32f1be8bb0a18532a3f88f734d1bbf9c41e5d",
         multilingual: false,
     },
     Model {
         name: "medium.en",
-        filename: "ggml-medium.en.bin",
         bytes: 1_533_774_781,
         sha256: "cc37e93478338ec7700281a7ac30a10128929eb8f427dda2e865faa8f6da4356",
         multilingual: false,
     },
     Model {
         name: "large-v3-turbo",
-        filename: "ggml-large-v3-turbo.bin",
         bytes: 1_624_555_275,
         sha256: "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69",
         multilingual: true,
@@ -66,8 +66,9 @@ pub(super) fn find(name: &str) -> Result<&'static Model> {
 pub(super) fn ensure(model: &Model) -> Result<PathBuf> {
     let base = BaseDirs::new().context("could not determine the platform cache directory")?;
     let directory = base.cache_dir().join("hear").join("models");
-    let destination = directory.join(model.filename);
-    let sidecar = directory.join(format!("{}.sha256", model.filename));
+    let filename = model.filename();
+    let destination = directory.join(&filename);
+    let sidecar = directory.join(format!("{filename}.sha256"));
     if destination.is_file() && sidecar_matches(&sidecar, model) {
         return Ok(destination);
     }
@@ -96,7 +97,7 @@ pub(super) fn ensure(model: &Model) -> Result<PathBuf> {
             directory.display()
         )
     })?;
-    let url = format!("{MODEL_BASE_URL}/{MODEL_REVISION}/{}", model.filename);
+    let url = format!("{MODEL_BASE_URL}/{MODEL_REVISION}/{filename}");
     eprintln!(
         "Downloading Whisper model {} to {}...",
         model.name,
@@ -179,7 +180,7 @@ mod tests {
 
     #[test]
     fn maps_supported_model_names_and_capabilities() {
-        assert_eq!(find("tiny.en").unwrap().filename, "ggml-tiny.en.bin");
+        assert_eq!(find("tiny.en").unwrap().filename(), "ggml-tiny.en.bin");
         assert!(!find("tiny.en").unwrap().multilingual);
         assert!(find("large-v3-turbo").unwrap().multilingual);
         assert!(find("surprise").is_err());
