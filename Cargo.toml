@@ -40,3 +40,8 @@ hound = "3.5"
 [profile.release]
 lto = "thin"
 strip = true
+
+[workspace]
+members = ["crates/hear-macos"]
+default-members = ["."]
+resolver = "3"
