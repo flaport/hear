@@ -12,7 +12,7 @@ notes are updated here before the stage is committed and pushed to `main`.
 | 0 | Complete | Record the roadmap and establish a clean baseline. |
 | 1 | Complete | Centralize shared OpenAI HTTP behavior. |
 | 2 | Complete | Split OpenAI transcription and harden upload preparation. |
-| 3 | Pending | Split transcript polishing by responsibility. |
+| 3 | Complete | Split transcript polishing by responsibility. |
 | 4 | Pending | Introduce options-based public library APIs. |
 | 5 | Pending | Split microphone capture, processing, and WAV output. |
 | 6 | Pending | Harden local Whisper configuration and model downloads. |
@@ -24,7 +24,7 @@ notes are updated here before the stage is committed and pushed to `main`.
 - [x] Stage 0 — Roadmap and baseline
 - [x] Stage 1 — Shared OpenAI transport
 - [x] Stage 2 — OpenAI transcription and uploads
-- [ ] Stage 3 — Transcript polishing
+- [x] Stage 3 — Transcript polishing
 - [ ] Stage 4 — Options-based library API
 - [ ] Stage 5 — Microphone recording internals
 - [ ] Stage 6 — Whisper hardening
@@ -128,7 +128,7 @@ Completed:
 
 ## Stage 3 — Transcript polishing
 
-State: Pending
+State: Complete
 
 Objectives:
 
@@ -145,6 +145,20 @@ Acceptance:
   captures an intentional correction.
 - Each pure transformation is independently unit tested.
 - The live formatting test remains opt-in and ignored by default.
+
+Completed:
+
+- Replaced `src/formatter.rs` with a `src/formatter/` module containing
+  `prepare.rs`, `request.rs`, `response.rs`, and a small orchestration module.
+- Isolated spoken-directive/context preparation, formatting policy and JSON
+  request construction, and structured response parsing.
+- Added tests for explicit verbatim behavior, spoken verbatim bypass of
+  dictionary/custom options, empty custom instructions, and empty structured
+  output while retaining all previous formatter coverage.
+- Kept the Responses API schema, model, endpoint, and public behavior unchanged.
+- Ran formatting, warnings-as-errors Clippy, full-feature tests, and
+  library-only tests. All 40 non-live tests passed; the 2 live OpenAI tests
+  remained intentionally ignored in each applicable test run.
 
 ## Stage 4 — Options-based library API
 
