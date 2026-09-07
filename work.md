@@ -11,7 +11,7 @@ notes are updated here before the stage is committed and pushed to `main`.
 | --- | --- | --- |
 | 0 | Complete | Record the roadmap and establish a clean baseline. |
 | 1 | Complete | Centralize shared OpenAI HTTP behavior. |
-| 2 | Pending | Split OpenAI transcription and harden upload preparation. |
+| 2 | Complete | Split OpenAI transcription and harden upload preparation. |
 | 3 | Pending | Split transcript polishing by responsibility. |
 | 4 | Pending | Introduce options-based public library APIs. |
 | 5 | Pending | Split microphone capture, processing, and WAV output. |
@@ -23,7 +23,7 @@ notes are updated here before the stage is committed and pushed to `main`.
 
 - [x] Stage 0 — Roadmap and baseline
 - [x] Stage 1 — Shared OpenAI transport
-- [ ] Stage 2 — OpenAI transcription and uploads
+- [x] Stage 2 — OpenAI transcription and uploads
 - [ ] Stage 3 — Transcript polishing
 - [ ] Stage 4 — Options-based library API
 - [ ] Stage 5 — Microphone recording internals
@@ -91,7 +91,7 @@ Completed:
 
 ## Stage 2 — OpenAI transcription and uploads
 
-State: Pending
+State: Complete
 
 Objectives:
 
@@ -111,6 +111,20 @@ Acceptance:
 - Direct, converted, and split paths have focused tests where external FFmpeg
   execution is not required.
 - Existing library and CLI interfaces remain compatible.
+
+Completed:
+
+- Replaced the path-aliased `src/engines/openai.rs` file with an ordinary
+  `src/openai/` module containing `request.rs` and `uploads.rs`.
+- Isolated multipart request execution and success-response parsing from file
+  conversion, splitting, validation, and temporary-file ownership.
+- Added explicit direct/convert/split planning and unit tests for supported
+  extensions, size boundaries, and converted-output rechecking.
+- Changed unsupported-format handling to inspect the converted MP3 and split it
+  when conversion produces a file above the 25 MB upload limit.
+- Ran formatting, warnings-as-errors Clippy, full-feature tests, and
+  library-only tests. All 36 non-live tests passed; the 2 live OpenAI tests
+  remained intentionally ignored in each applicable test run.
 
 ## Stage 3 — Transcript polishing
 
