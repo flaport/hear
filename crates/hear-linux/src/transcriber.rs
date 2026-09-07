@@ -1,17 +1,17 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::mpsc;
 use std::thread;
 
 use tempfile::TempPath;
-use winit::event_loop::EventLoopProxy;
 
 use crate::app::AppEvent;
 use crate::credentials;
 
-pub fn transcribe(recording: TempPath, proxy: EventLoopProxy<AppEvent>) {
+pub fn transcribe_async(recording: TempPath, tx: mpsc::Sender<AppEvent>) {
     thread::spawn(move || {
         let result = run(&recording).map_err(|error| format!("{error:#}"));
-        let _ = proxy.send_event(AppEvent::TranscriptionFinished(result));
+        let _ = tx.send(AppEvent::TranscriptionFinished(result));
     });
 }
 

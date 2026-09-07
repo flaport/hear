@@ -1,22 +1,24 @@
-use std::time::{Duration, Instant};
+use std::sync::mpsc;
+use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use global_hotkey::hotkey::{Code, HotKey, Modifiers};
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
-use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem};
-use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
-use winit::application::ApplicationHandler;
-use winit::event::WindowEvent;
-use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
-use winit::window::WindowId;
+use x11rb::connection::Connection;
+use x11rb::protocol::xproto::*;
+use x11rb::rust_connection::RustConnection;
 
 use crate::delivery;
 use crate::recording::Recorder;
 use crate::transcriber;
 
-const POLL_INTERVAL: Duration = Duration::from_millis(50);
+const ICON_SIZE: u16 = 22;
+const SYSTEM_TRAY_REQUEST_DOCK: u32 = 0;
 
-#[derive(Debug)]
+const COLOR_IDLE: u32 = 0x666666;
+const COLOR_RECORDING: u32 = 0xCC3333;
+const COLOR_TRANSCRIBING: u32 = 0xCC9933;
+
 pub enum AppEvent {
     TranscriptionFinished(Result<String, String>),
 }
@@ -27,88 +29,114 @@ enum State {
     Transcribing,
 }
 
-struct Ui {
-    _tray: TrayIcon,
-    status: MenuItem,
-    toggle: MenuItem,
-    paste: CheckMenuItem,
-    quit: MenuItem,
-}
-
 pub struct App {
-    proxy: EventLoopProxy<AppEvent>,
+    conn: RustConnection,
+    screen_num: usize,
+    icon_window: Window,
     state: State,
-    ui: Option<Ui>,
-    hotkey_manager: Option<GlobalHotKeyManager>,
+    paste: bool,
+    event_rx: mpsc::Receiver<AppEvent>,
+    event_tx: mpsc::Sender<AppEvent>,
     hotkey: HotKey,
+    _hotkey_manager: Option<GlobalHotKeyManager>,
 }
 
 impl App {
     pub fn run() -> Result<()> {
-        gtk::init().context("could not initialize GTK")?;
-        let event_loop = EventLoop::<AppEvent>::with_user_event()
-            .build()
-            .context("could not create the event loop")?;
-        let proxy = event_loop.create_proxy();
-        let mut app = Self {
-            proxy,
-            state: State::Idle,
-            ui: None,
-            hotkey_manager: None,
-            hotkey: HotKey::new(Some(Modifiers::ALT), Code::Space),
-        };
-        event_loop
-            .run_app(&mut app)
-            .context("the event loop failed")
-    }
+        let (conn, screen_num) = RustConnection::connect(None)
+            .context("could not connect to X11 display")?;
+        let screen = &conn.setup().roots[screen_num];
 
-    fn initialize(&mut self) -> Result<()> {
+        let icon_window = conn.generate_id()?;
+        conn.create_window(
+            screen.root_depth,
+            icon_window,
+            screen.root,
+            0, 0,
+            ICON_SIZE, ICON_SIZE,
+            0,
+            WindowClass::INPUT_OUTPUT,
+            screen.root_visual,
+            &CreateWindowAux::new()
+                .background_pixel(COLOR_IDLE)
+                .event_mask(
+                    EventMask::EXPOSURE
+                        | EventMask::BUTTON_PRESS
+                        | EventMask::STRUCTURE_NOTIFY,
+                ),
+        )?;
+        conn.flush()?;
+
+        request_dock(&conn, screen, icon_window)?;
+
+        let hotkey = HotKey::new(Some(Modifiers::ALT), Code::Space);
         let manager = match GlobalHotKeyManager::new() {
-            Ok(manager) => match manager.register(self.hotkey) {
+            Ok(manager) => match manager.register(hotkey) {
                 Ok(()) => Some(manager),
                 Err(error) => {
-                    eprintln!(
-                        "Could not register Alt-Space: {error}. The tray menu remains available."
-                    );
+                    eprintln!("Could not register Alt-Space: {error}. Use the tray icon instead.");
                     None
                 }
             },
             Err(error) => {
-                eprintln!(
-                    "Could not initialize global hotkeys: {error}. The tray menu remains available."
-                );
+                eprintln!("Could not initialize global hotkeys: {error}. Use the tray icon instead.");
                 None
             }
         };
 
-        let status = MenuItem::new(
-            if manager.is_some() {
-                "Idle — Alt-Space to record"
-            } else {
-                "Idle — select Start Recording"
-            },
-            false,
-            None,
-        );
-        let toggle = MenuItem::new("Start Recording", true, None);
-        let paste = CheckMenuItem::new("Paste Automatically", true, true, None);
-        let quit = MenuItem::new("Quit Hear", true, None);
-        let separator = PredefinedMenuItem::separator();
-        let menu = Menu::with_items(&[&status, &toggle, &paste, &separator, &quit])?;
-        let tray = TrayIconBuilder::new()
-            .with_menu(Box::new(menu))
-            .with_tooltip("Hear — Idle")
-            .with_icon(icon(false)?)
-            .build()?;
-        self.hotkey_manager = manager;
-        self.ui = Some(Ui {
-            _tray: tray,
-            status,
-            toggle,
-            paste,
-            quit,
-        });
-        Ok(())
+        let (event_tx, event_rx) = mpsc::channel();
+        let mut app = Self {
+            conn,
+            screen_num,
+            icon_window,
+            state: State::Idle,
+            paste: true,
+            event_rx,
+            event_tx,
+            hotkey,
+            _hotkey_manager: manager,
+        };
+
+        app.run_loop()
+    }
+
+    fn run_loop(&mut self) -> Result<()> {
+        loop {
+            while let Some(event) = self.conn.poll_for_event()? {
+                match event {
+                    x11rb::protocol::Event::Expose(_) => self.draw_icon()?,
+                    x11rb::protocol::Event::ButtonPress(event) => {
+                        if event.detail == 1 {
+                            self.toggle_recording();
+                        } else if event.detail == 3 {
+                            self.toggle_paste();
+                        }
+                    }
+                    x11rb::protocol::Event::DestroyNotify(event) => {
+                        if event.window == self.icon_window {
+                            return Ok(());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            while let Ok(event) = GlobalHotKeyEvent::receiver().try_recv() {
+                if event.id == self.hotkey.id() && event.state == HotKeyState::Pressed {
+                    self.toggle_recording();
+                }
+            }
+
+            while let Ok(event) = self.event_rx.try_recv() {
+                match event {
+                    AppEvent::TranscriptionFinished(result) => {
+                        self.transcription_finished(result);
+                    }
+                }
+            }
+
+            std::thread::sleep(Duration::from_millis(50));
+        }
     }
 
     fn toggle_recording(&mut self) {
@@ -116,24 +144,26 @@ impl App {
             State::Idle => match Recorder::start() {
                 Ok(recorder) => {
                     self.state = State::Recording(recorder);
-                    self.set_status("Recording…", "Stop Recording", "Hear — Recording");
+                    eprintln!("Recording…");
+                    let _ = self.update_icon(COLOR_RECORDING);
                 }
                 Err(error) => {
                     self.state = State::Idle;
-                    self.show_error(&format!("Could not record: {error:#}"));
+                    eprintln!("Could not record: {error:#}");
+                    let _ = self.update_icon(COLOR_IDLE);
                 }
             },
             State::Recording(recorder) => match recorder.finish() {
                 Ok(recording) => {
-                    self.set_status("Transcribing…", "Transcribing…", "Hear — Transcribing");
-                    if let Some(ui) = &self.ui {
-                        ui.toggle.set_enabled(false);
-                    }
-                    transcriber::transcribe(recording, self.proxy.clone());
+                    eprintln!("Transcribing…");
+                    let _ = self.update_icon(COLOR_TRANSCRIBING);
+                    let tx = self.event_tx.clone();
+                    transcriber::transcribe_async(recording, tx);
                 }
                 Err(error) => {
                     self.state = State::Idle;
-                    self.show_error(&format!("Could not finish recording: {error:#}"));
+                    eprintln!("Could not finish recording: {error:#}");
+                    let _ = self.update_icon(COLOR_IDLE);
                 }
             },
             State::Transcribing => {
@@ -144,117 +174,109 @@ impl App {
 
     fn transcription_finished(&mut self, result: Result<String, String>) {
         self.state = State::Idle;
-        if let Some(ui) = &self.ui {
-            ui.toggle.set_enabled(true);
-        }
+        let _ = self.update_icon(COLOR_IDLE);
         match result {
-            Ok(transcript) => {
-                let paste = self.ui.as_ref().is_some_and(|ui| ui.paste.is_checked());
-                let shortcut_available = self.hotkey_manager.is_some();
-                match delivery::deliver(&transcript, paste) {
-                    Ok(true) => self.set_status(
-                        if shortcut_available {
-                            "Pasted — Alt-Space to record"
-                        } else {
-                            "Pasted — select Start Recording"
-                        },
-                        "Start Recording",
-                        "Hear — Pasted",
-                    ),
-                    Ok(false) => self.set_status(
-                        if shortcut_available {
-                            "Copied — Alt-Space to record"
-                        } else {
-                            "Copied — select Start Recording"
-                        },
-                        "Start Recording",
-                        "Hear — Copied",
-                    ),
-                    Err(error) => {
-                        self.show_error(&format!("Could not deliver transcript: {error:#}"))
-                    }
-                }
-            }
-            Err(error) => self.show_error(&format!("Transcription failed: {error}")),
+            Ok(transcript) => match delivery::deliver(&transcript, self.paste) {
+                Ok(true) => eprintln!("Pasted."),
+                Ok(false) => eprintln!("Copied to clipboard."),
+                Err(error) => eprintln!("Could not deliver transcript: {error:#}"),
+            },
+            Err(error) => eprintln!("Transcription failed: {error}"),
         }
     }
 
-    fn set_status(&self, status: &str, toggle: &str, tooltip: &str) {
-        if let Some(ui) = &self.ui {
-            ui.status.set_text(status);
-            ui.toggle.set_text(toggle);
-            let _ = ui._tray.set_tooltip(Some(tooltip));
-            let _ = ui
-                ._tray
-                .set_icon(icon(matches!(self.state, State::Recording(_))).ok());
-        }
+    fn toggle_paste(&mut self) {
+        self.paste = !self.paste;
+        eprintln!(
+            "Paste automatically: {}",
+            if self.paste { "on" } else { "off" }
+        );
     }
 
-    fn show_error(&self, message: &str) {
-        eprintln!("{message}");
-        self.set_status(message, "Start Recording", "Hear — Error");
+    fn update_icon(&self, color: u32) -> Result<()> {
+        let screen = &self.conn.setup().roots[self.screen_num];
+        self.conn.change_window_attributes(
+            self.icon_window,
+            &ChangeWindowAttributesAux::new().background_pixel(color),
+        )?;
+        self.conn.clear_area(true, self.icon_window, 0, 0, screen.width_in_pixels, screen.height_in_pixels)?;
+        self.conn.flush()?;
+        Ok(())
     }
 
-    fn handle_menu(&mut self, event: MenuEvent, event_loop: &ActiveEventLoop) {
-        let Some(ui) = &self.ui else {
-            return;
+    fn draw_icon(&self) -> Result<()> {
+        let color = match self.state {
+            State::Idle => COLOR_IDLE,
+            State::Recording(_) => COLOR_RECORDING,
+            State::Transcribing => COLOR_TRANSCRIBING,
         };
-        if event.id == *ui.toggle.id() {
-            self.toggle_recording();
-        } else if event.id == *ui.quit.id() {
-            event_loop.exit();
-        }
+        let gc = self.conn.generate_id()?;
+        self.conn.create_gc(
+            gc,
+            self.icon_window,
+            &CreateGCAux::new().foreground(color),
+        )?;
+        let pad = 3;
+        let diameter = ICON_SIZE - 2 * pad;
+        self.conn.poly_fill_arc(
+            self.icon_window,
+            gc,
+            &[Arc {
+                x: pad as i16,
+                y: pad as i16,
+                width: diameter,
+                height: diameter,
+                angle1: 0,
+                angle2: 360 * 64,
+            }],
+        )?;
+        self.conn.free_gc(gc)?;
+        self.conn.flush()?;
+        Ok(())
     }
 }
 
-impl ApplicationHandler<AppEvent> for App {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.ui.is_none()
-            && let Err(error) = self.initialize()
-        {
-            eprintln!("hear-linux failed to initialize: {error:#}");
-            event_loop.exit();
-        }
+fn request_dock(
+    conn: &RustConnection,
+    screen: &Screen,
+    icon_window: Window,
+) -> Result<()> {
+    let tray_atom_name = format!("_NET_SYSTEM_TRAY_S{}", screen.root_visual);
+    let tray_atom = conn
+        .intern_atom(false, b"_NET_SYSTEM_TRAY_S0")?
+        .reply()
+        .context("could not intern _NET_SYSTEM_TRAY_S0")?
+        .atom;
+    let opcode_atom = conn
+        .intern_atom(false, b"_NET_SYSTEM_TRAY_OPCODE")?
+        .reply()
+        .context("could not intern _NET_SYSTEM_TRAY_OPCODE")?
+        .atom;
+
+    let tray_owner = conn
+        .get_selection_owner(tray_atom)?
+        .reply()
+        .context("could not find the system tray")?
+        .owner;
+    if tray_owner == x11rb::NONE {
+        bail!(
+            "no system tray is running (no owner for {tray_atom_name}). \
+             Make sure your window manager has a systray enabled."
+        );
     }
 
-    fn window_event(
-        &mut self,
-        _event_loop: &ActiveEventLoop,
-        _window_id: WindowId,
-        _event: WindowEvent,
-    ) {
-    }
-
-    fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: AppEvent) {
-        match event {
-            AppEvent::TranscriptionFinished(result) => self.transcription_finished(result),
-        }
-    }
-
-    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        while let Ok(event) = GlobalHotKeyEvent::receiver().try_recv() {
-            if event.id == self.hotkey.id() && event.state == HotKeyState::Pressed {
-                self.toggle_recording();
-            }
-        }
-        while let Ok(event) = MenuEvent::receiver().try_recv() {
-            self.handle_menu(event, event_loop);
-        }
-        event_loop.set_control_flow(ControlFlow::WaitUntil(Instant::now() + POLL_INTERVAL));
-    }
-}
-
-fn icon(recording: bool) -> Result<Icon> {
-    let mut rgba = vec![0_u8; 16 * 16 * 4];
-    let radius = if recording { 6.5 } else { 5.0 };
-    for y in 0..16 {
-        for x in 0..16 {
-            let distance = ((x as f32 - 7.5).powi(2) + (y as f32 - 7.5).powi(2)).sqrt();
-            if distance <= radius {
-                let offset = (y * 16 + x) * 4;
-                rgba[offset..offset + 4].copy_from_slice(&[0, 0, 0, 255]);
-            }
-        }
-    }
-    Icon::from_rgba(rgba, 16, 16).context("could not create the tray icon")
+    conn.send_event(
+        false,
+        tray_owner,
+        EventMask::NO_EVENT,
+        ClientMessageEvent::new(
+            32,
+            tray_owner,
+            opcode_atom,
+            [x11rb::CURRENT_TIME, SYSTEM_TRAY_REQUEST_DOCK, icon_window, 0, 0],
+        ),
+    )?;
+    conn.map_window(icon_window)?;
+    conn.flush()?;
+    Ok(())
 }
