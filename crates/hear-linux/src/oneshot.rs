@@ -36,7 +36,7 @@ pub fn run(config: Config) -> Result<()> {
 
     let recording = recorder.finish()?;
     eprintln!("Transcribing…");
-    let transcript = crate::transcriber::run(&recording, &config.hear_options)?;
+    let transcript = crate::transcriber::run(&recording, &config.hear)?;
     if crate::delivery::deliver(&transcript, config.paste_automatically, &config)? {
         eprintln!("Pasted.");
     } else {

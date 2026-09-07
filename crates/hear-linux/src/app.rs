@@ -204,7 +204,7 @@ impl App {
                     eprintln!("Transcribing…");
                     let _ = self.update_icon();
                     let tx = self.event_tx.clone();
-                    transcriber::transcribe_async(recording, tx, self.config.hear_options.clone());
+                    transcriber::transcribe_async(recording, tx, self.config.hear.clone());
                 }
                 Err(error) => {
                     self.state = State::Idle;

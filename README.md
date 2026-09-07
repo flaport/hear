@@ -81,7 +81,7 @@ word, so `--context plain` is an escape hatch for text such as "Message
 received yesterday." `verbatim` removes a spoken directive but otherwise skips
 the formatting request. Use `--no-polish` to bypass LLM formatting entirely.
 
-Polishing uses `gpt-5.6-luna` through the OpenAI Responses API and requires
+Polishing uses `gpt-5.6-luna` by default through the OpenAI Responses API and requires
 `OPENAI_API_KEY`. This means transcript text is sent to OpenAI even when audio
 was transcribed locally with whisper.cpp. Use `--no-polish` for a fully local
 Whisper workflow. Use `--raw-output PATH` to keep the original transcript

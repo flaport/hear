@@ -25,6 +25,7 @@ pub struct Transcript {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct PolishOptions<'a> {
+    model: Option<&'a str>,
     context: Option<FormatContext>,
     dictionary_context: Option<&'a str>,
     instruction: Option<&'a str>,
@@ -33,6 +34,12 @@ pub struct PolishOptions<'a> {
 impl<'a> PolishOptions<'a> {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Select the OpenAI model used to format the transcript.
+    pub fn model(mut self, model: &'a str) -> Self {
+        self.model = Some(model);
+        self
     }
 
     pub fn context(mut self, context: FormatContext) -> Self {
@@ -116,6 +123,7 @@ pub fn transcribe_openai_raw(input: &Path, vocabulary: &[String]) -> Result<Stri
 pub fn polish_with_options(transcript: &str, options: &PolishOptions<'_>) -> Result<String> {
     formatter::polish(
         transcript,
+        options.model,
         options.context,
         options.dictionary_context,
         options.instruction,

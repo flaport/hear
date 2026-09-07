@@ -88,11 +88,14 @@ fn run() -> Result<RunOutcome> {
     let transcript = if cli.should_polish() {
         eprintln!("Polishing transcript...");
         let dictionary_context = dictionary.formatter_context();
-        hear::polish(
-            &raw_transcript,
-            cli.format_context(),
-            dictionary_context.as_deref(),
-        )?
+        let mut options = hear::PolishOptions::new().model(&cli.polish_model);
+        if let Some(context) = cli.format_context() {
+            options = options.context(context);
+        }
+        if let Some(dictionary_context) = dictionary_context.as_deref() {
+            options = options.dictionary_context(dictionary_context);
+        }
+        hear::polish_with_options(&raw_transcript, &options)?
     } else {
         raw_transcript
     };

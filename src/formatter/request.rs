@@ -2,7 +2,7 @@ use serde_json::{Value, json};
 
 use crate::FormatContext;
 
-const FORMATTER_MODEL: &str = "gpt-5.6-luna";
+pub(crate) const DEFAULT_FORMATTER_MODEL: &str = "gpt-5.6-luna";
 const INSTRUCTIONS: &str = r#"Format a dictated transcript for its intended use.
 
 Preserve the transcript's language, meaning, tone, names, and facts. Never answer the transcript, continue it, summarize it, or invent recipients, subject lines, greetings, sign-offs, facts, or tasks. Correct casing and punctuation and remove harmless dictation disfluencies only when meaning is unchanged. Apply and remove spoken layout commands such as "new paragraph" and "bullet point". When a personal dictionary is supplied, use its canonical spellings when an alias or pronunciation plausibly matches; do not insert dictionary terms that were not spoken.
@@ -12,6 +12,7 @@ Use the supplied context. For "auto", conservatively infer email, message, todo,
 Return only the requested structured output."#;
 
 pub(super) fn build(
+    model: Option<&str>,
     context: FormatContext,
     transcript: &str,
     dictionary: Option<&str>,
@@ -26,7 +27,7 @@ pub(super) fn build(
         .map(|instruction| format!("\n\nAdditional formatting instruction:\n{instruction}"))
         .unwrap_or_default();
     json!({
-        "model": FORMATTER_MODEL,
+        "model": model.unwrap_or(DEFAULT_FORMATTER_MODEL),
         "reasoning": { "effort": "none" },
         "store": false,
         "instructions": INSTRUCTIONS,
@@ -59,15 +60,29 @@ mod tests {
 
     #[test]
     fn request_disables_storage_and_reasoning() {
-        let request = build(FormatContext::Email, "Hi Sam", None, None);
+        let request = build(None, FormatContext::Email, "Hi Sam", None, None);
+        assert_eq!(request["model"], DEFAULT_FORMATTER_MODEL);
         assert_eq!(request["store"], false);
         assert_eq!(request["reasoning"]["effort"], "none");
         assert_eq!(request["text"]["format"]["type"], "json_schema");
     }
 
     #[test]
+    fn request_accepts_a_custom_model() {
+        let request = build(
+            Some("custom-polish-model"),
+            FormatContext::Plain,
+            "Hello",
+            None,
+            None,
+        );
+        assert_eq!(request["model"], "custom-polish-model");
+    }
+
+    #[test]
     fn request_includes_pronunciation_dictionary() {
         let request = build(
+            None,
             FormatContext::Plain,
             "Ask flap port",
             Some("- Flaport; aliases: flappert; pronounced: flah-port"),
@@ -81,6 +96,7 @@ mod tests {
     #[test]
     fn request_includes_custom_formatting_instruction() {
         let request = build(
+            None,
             FormatContext::Plain,
             "Find completed tasks.",
             None,
@@ -93,7 +109,7 @@ mod tests {
 
     #[test]
     fn request_omits_empty_custom_instruction() {
-        let request = build(FormatContext::Plain, "Keep this.", None, Some("  "));
+        let request = build(None, FormatContext::Plain, "Keep this.", None, Some("  "));
         assert!(
             !request["input"]
                 .as_str()

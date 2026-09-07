@@ -49,24 +49,38 @@ setting is optional; the defaults are equivalent to:
 ```toml
 hotkey = "alt+x"
 paste_automatically = true
-hear_options = []
 
 [paste_shortcuts]
 default = "ctrl+v"
 Alacritty = "alt+v"
+
+[hear]
+engine = "gpt-transcribe"
+model = ""
+language = ""
+polish_model = "gpt-5.6-luna"
+context = "auto"
+polish = true
+save_recording = ""
+output = ""
+raw_output = ""
+force = false
 ```
 
-`hear_options` is passed directly to the bundled `hear` CLI before the app's
-temporary audio path. For example, local Dutch transcription without polishing
-can be selected with:
+Empty paths disable the corresponding file output, while an empty transcription
+`model` or `language` selects the CLI default. For example, local Dutch
+transcription without polishing can be selected with:
 
 ```toml
-hear_options = ["--engine", "whisper", "--language", "nl", "--no-polish"]
+[hear]
+engine = "whisper"
+model = "large-v3-turbo"
+language = "nl"
+polish = false
 ```
 
-Audio capture and transcript delivery remain app-owned, so `--record`,
-`--save-recording`, `--output`, and `--raw-output` are rejected. Paste shortcut
-overrides use X11 window classes and `xdotool` shortcut syntax.
+Audio capture remains app-owned and is always enabled when the hotkey is used.
+Paste shortcut overrides use X11 window classes and `xdotool` shortcut syntax.
 
 ## Clipboard and automatic paste
 

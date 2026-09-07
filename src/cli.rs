@@ -85,6 +85,10 @@ pub struct Cli {
     #[arg(long, value_name = "MODEL")]
     pub model: Option<String>,
 
+    /// OpenAI model used to polish the transcript.
+    #[arg(long, default_value = "gpt-5.6-luna")]
+    pub polish_model: String,
+
     /// Spoken language for Whisper, or auto (defaults to en).
     #[arg(long, value_name = "LANGUAGE")]
     pub language: Option<String>,
@@ -122,6 +126,7 @@ impl Cli {
                 || self.save_recording.is_some()
                 || self.engine != Engine::GptTranscribe
                 || self.model.is_some()
+                || self.polish_model != "gpt-5.6-luna"
                 || self.language.is_some()
                 || self.output.is_some()
                 || self.polish
@@ -200,6 +205,7 @@ mod tests {
     fn defaults_to_gpt_transcribe() {
         let cli = Cli::try_parse_from(["hear", "message.mp3"]).unwrap();
         assert_eq!(cli.engine, Engine::GptTranscribe);
+        assert_eq!(cli.polish_model, "gpt-5.6-luna");
         assert!(cli.should_polish());
     }
 
