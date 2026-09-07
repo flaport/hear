@@ -54,24 +54,38 @@ jobs:
             exit 1
           fi
 
-      - name: Build release binary
-        run: cargo build --locked --release --target "${{ matrix.target }}"
+      - name: Build Linux release binaries
+        if: runner.os == 'Linux'
+        run: cargo build --locked --release -p hear -p hear-linux --target "${{ matrix.target }}"
+
+      - name: Build macOS CLI and application bundle
+        if: runner.os == 'macOS'
+        env:
+          TARGET: ${{ matrix.target }}
+        run: crates/hear-macos/bundle.sh
 
       - name: Verify library-only build
         run: cargo build --locked --release --no-default-features --lib --target "${{ matrix.target }}"
 
-      - name: Package binary
+      - name: Package release assets
         shell: bash
         run: |
-          archive="hear-${GITHUB_REF_NAME}-${{ matrix.target }}.tar.gz"
-          tar -C "target/${{ matrix.target }}/release" -czf "$archive" hear
-          echo "ARCHIVE=$archive" >> "$GITHUB_ENV"
+          mkdir -p artifacts
+          tar -C "target/${{ matrix.target }}/release" -czf \
+            "artifacts/hear-${GITHUB_REF_NAME}-${{ matrix.target }}.tar.gz" hear
+          if [[ "${{ runner.os }}" == "Linux" ]]; then
+            tar -C "target/${{ matrix.target }}/release" -czf \
+              "artifacts/hear-app-${GITHUB_REF_NAME}-${{ matrix.target }}.tar.gz" hear-app
+          else
+            ditto -c -k --sequesterRsrc --keepParent dist/Hear.app \
+              "artifacts/Hear-${GITHUB_REF_NAME}-${{ matrix.target }}.zip"
+          fi
 
-      - name: Upload packaged binary
+      - name: Upload packaged binaries
         uses: actions/upload-artifact@v7
         with:
           name: hear-${{ matrix.target }}
-          path: ${{ env.ARCHIVE }}
+          path: artifacts/*
           if-no-files-found: error
 
   release:
@@ -90,7 +104,7 @@ jobs:
 
       - name: Create checksums
         working-directory: release
-        run: sha256sum *.tar.gz > SHA256SUMS
+        run: sha256sum * > SHA256SUMS
 
       - name: Publish release
         env:

@@ -16,7 +16,7 @@ fn main() {
         Some("remove-api-key") => credentials::remove_api_key(),
         Some("help" | "--help" | "-h") => {
             println!(
-                "hear-linux\n\nRun without a command to start the system-tray app.\n\nCommands:\n  tray             Start the system-tray app\n  oneshot          Toggle recording, then transcribe, paste, and exit\n  install-api-key  Save an OpenAI API key in the system keyring\n  remove-api-key   Remove the stored OpenAI API key"
+                "hear-app\n\nRun without a command to start the system-tray app.\n\nCommands:\n  tray             Start the system-tray app\n  oneshot          Toggle recording, then transcribe, paste, and exit\n  install-api-key  Save an OpenAI API key in the system keyring\n  remove-api-key   Remove the stored OpenAI API key"
             );
             Ok(())
         }
@@ -24,7 +24,7 @@ fn main() {
         None => app::App::run(),
     };
     if let Err(error) = result {
-        eprintln!("hear-linux failed: {error:#}");
+        eprintln!("hear-app failed: {error:#}");
         std::process::exit(1);
     }
 }

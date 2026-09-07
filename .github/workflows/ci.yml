@@ -74,7 +74,7 @@ jobs:
       - name: Verify install script
         run: |
           test -x crates/hear-linux/install.sh
-          test -x target/release/hear-linux
+          test -x target/release/hear-app
           test -x target/release/hear
 
   macos-companion:

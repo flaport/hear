@@ -27,7 +27,7 @@ pub fn run() -> Result<()> {
     write_pid_file(&pid_file)?;
     let _cleanup = PidCleanup(&pid_file);
 
-    eprintln!("Recording… (run `hear-linux oneshot` again to stop)");
+    eprintln!("Recording… (run `hear-app oneshot` again to stop)");
     let recorder = Recorder::start()?;
     while !stop.load(Ordering::Relaxed) {
         std::thread::sleep(Duration::from_millis(50));

@@ -1,12 +1,12 @@
-# hear-linux
+# hear-app
 
-`hear-linux` is a Linux-only system-tray companion for `hear`. Press Alt-Z
+`hear-app` is a Linux-only system-tray companion for `hear`. Press Alt-Z
 to start recording, press it again to stop, and the app runs the bundled `hear`
 CLI. Successful transcripts are always copied to the clipboard and can
 optionally be pasted into the active application.
 
 For window managers where a tray or application-managed global shortcut is not
-practical, `hear-linux oneshot` provides the same record/transcribe/deliver
+practical, `hear-app oneshot` provides the same record/transcribe/deliver
 workflow for an external hotkey daemon. Invoke it once to begin recording and a
 second time to stop; the original process then transcribes, pastes, and exits.
 If Alt-Z is already reserved, the tray app remains usable from its menu and
@@ -33,11 +33,11 @@ crates/hear-linux/install.sh
 Store the API key in the system keyring before launching:
 
 ```sh
-hear-linux install-api-key
+hear-app install-api-key
 ```
 
 The command reads the key without echoing it. Remove it with
-`hear-linux remove-api-key`. An inherited `OPENAI_API_KEY` takes precedence over
+`hear-app remove-api-key`. An inherited `OPENAI_API_KEY` takes precedence over
 the keyring entry during development.
 
 ## Clipboard and automatic paste
@@ -64,10 +64,10 @@ For example, an SXHKD binding can toggle the one-shot mode with:
 
 ```text
 alt + space
-    hear-linux oneshot
+    hear-app oneshot
 ```
 
-This mode does not require a system tray. The ordinary `hear-linux` command
+This mode does not require a system tray. The ordinary `hear-app` command
 continues to launch the tray app, so either integration can be used.
 
 ## Desktop integration

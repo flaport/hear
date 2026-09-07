@@ -98,14 +98,14 @@ impl App {
             icon_window,
             AtomEnum::WM_CLASS,
             AtomEnum::STRING,
-            b"hear-linux\0Hear-linux",
+            b"hear-app\0Hear-app",
         )?;
         conn.change_property8(
             PropMode::REPLACE,
             icon_window,
             AtomEnum::WM_NAME,
             AtomEnum::STRING,
-            b"hear-linux",
+            b"hear-app",
         )?;
         conn.flush()?;
 
