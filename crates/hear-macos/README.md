@@ -24,11 +24,23 @@ crates/hear-macos/bundle.sh
 open dist/Hear.app
 ```
 
+Store the API key in macOS Keychain before launching the app from Finder:
+
+```sh
+dist/Hear.app/Contents/MacOS/hear-macos install-api-key
+```
+
+The command reads the key without echoing it. Remove it with
+`hear-macos remove-api-key`. An inherited `OPENAI_API_KEY` takes precedence over
+the Keychain entry during development.
+
 The first recording prompts for microphone access. Automatic paste additionally
 requires Hear to be enabled under System Settings → Privacy & Security →
 Accessibility. When Accessibility access is unavailable, the transcript stays
-on the clipboard.
+on the clipboard. The menu includes a shortcut to the appropriate System
+Settings page.
 
 The app uses the bundled `Contents/Helpers/hear` binary. Consequently all
-ordinary `hear` environment and engine requirements currently apply, including
-`OPENAI_API_KEY` for the default transcription and polishing workflow.
+ordinary `hear` engine requirements currently apply. The companion injects its
+Keychain-backed API key into the helper for the default transcription and
+polishing workflow.

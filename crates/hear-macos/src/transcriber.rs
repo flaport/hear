@@ -6,6 +6,7 @@ use tempfile::TempPath;
 use winit::event_loop::EventLoopProxy;
 
 use crate::app::AppEvent;
+use crate::credentials;
 
 pub fn transcribe(recording: TempPath, proxy: EventLoopProxy<AppEvent>) {
     thread::spawn(move || {
@@ -15,8 +16,14 @@ pub fn transcribe(recording: TempPath, proxy: EventLoopProxy<AppEvent>) {
 }
 
 fn run(recording: &Path) -> anyhow::Result<String> {
-    let output = Command::new(helper_path())
-        .arg(recording)
+    let mut command = Command::new(helper_path());
+    command.arg(recording);
+    if std::env::var_os("OPENAI_API_KEY").is_none()
+        && let Some(api_key) = credentials::stored_api_key()?
+    {
+        command.env("OPENAI_API_KEY", api_key);
+    }
+    let output = command
         .output()
         .map_err(|error| anyhow::anyhow!("could not launch the hear helper: {error}"))?;
     if !output.status.success() {

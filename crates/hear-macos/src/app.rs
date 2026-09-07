@@ -32,6 +32,7 @@ struct Ui {
     status: MenuItem,
     toggle: MenuItem,
     paste: CheckMenuItem,
+    accessibility: MenuItem,
     quit: MenuItem,
 }
 
@@ -70,9 +71,11 @@ impl App {
         let status = MenuItem::new("Idle — Option-Space to record", false, None);
         let toggle = MenuItem::new("Start Recording", true, None);
         let paste = CheckMenuItem::new("Paste Automatically", true, true, None);
+        let accessibility = MenuItem::new("Open Accessibility Settings…", true, None);
         let quit = MenuItem::new("Quit Hear", true, None);
         let separator = PredefinedMenuItem::separator();
-        let menu = Menu::with_items(&[&status, &toggle, &paste, &separator, &quit])?;
+        let menu =
+            Menu::with_items(&[&status, &toggle, &paste, &accessibility, &separator, &quit])?;
         let tray = TrayIconBuilder::new()
             .with_menu(Box::new(menu))
             .with_tooltip("Hear — Idle")
@@ -85,6 +88,7 @@ impl App {
             status,
             toggle,
             paste,
+            accessibility,
             quit,
         });
         Ok(())
@@ -172,6 +176,15 @@ impl App {
         };
         if event.id == *ui.toggle.id() {
             self.toggle_recording();
+        } else if event.id == *ui.accessibility.id() {
+            if let Err(error) = std::process::Command::new("open")
+                .arg(
+                    "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+                )
+                .status()
+            {
+                self.show_error(&format!("Could not open Accessibility settings: {error}"));
+            }
         } else if event.id == *ui.quit.id() {
             event_loop.exit();
         }
