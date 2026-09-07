@@ -76,6 +76,7 @@ fn run() -> Result<RunOutcome> {
         Engine::Whisper => engines::whisper::transcribe(
             &input,
             cli.model.as_deref().unwrap_or("tiny.en"),
+            cli.language.as_deref().unwrap_or("en"),
             &vocabulary,
         )?,
     };

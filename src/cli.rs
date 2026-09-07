@@ -85,6 +85,10 @@ pub struct Cli {
     #[arg(long, value_name = "MODEL")]
     pub model: Option<String>,
 
+    /// Spoken language for Whisper, or auto (defaults to en).
+    #[arg(long, value_name = "LANGUAGE")]
+    pub language: Option<String>,
+
     /// Write the transcript to a file instead of stdout.
     #[arg(short, long, value_name = "PATH")]
     pub output: Option<PathBuf>,
@@ -118,6 +122,7 @@ impl Cli {
                 || self.save_recording.is_some()
                 || self.engine != Engine::GptTranscribe
                 || self.model.is_some()
+                || self.language.is_some()
                 || self.output.is_some()
                 || self.polish
                 || self.context.is_some()
@@ -134,6 +139,9 @@ impl Cli {
         }
         if self.engine == Engine::GptTranscribe && self.model.is_some() {
             bail!("--model is only valid with --engine codex or --engine whisper");
+        }
+        if self.language.is_some() && self.engine != Engine::Whisper {
+            bail!("--language is only valid with --engine whisper");
         }
         if self.raw_output.is_some() && !self.should_polish() {
             bail!("--raw-output cannot be used with --no-polish");
@@ -205,6 +213,23 @@ mod tests {
     fn rejects_model_for_gpt_transcribe() {
         let cli = Cli::try_parse_from(["hear", "message.wav", "--model", "anything"]).unwrap();
         assert!(cli.validate().is_err());
+    }
+
+    #[test]
+    fn language_is_only_valid_for_whisper() {
+        let openai = Cli::try_parse_from(["hear", "message.wav", "--language", "de"]).unwrap();
+        assert!(openai.validate().is_err());
+
+        let whisper = Cli::try_parse_from([
+            "hear",
+            "message.wav",
+            "--engine",
+            "whisper",
+            "--language",
+            "de",
+        ])
+        .unwrap();
+        assert!(whisper.validate().is_ok());
     }
 
     #[test]

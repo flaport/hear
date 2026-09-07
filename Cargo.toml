@@ -7,7 +7,7 @@ license = "MIT"
 
 [features]
 default = ["cli"]
-cli = ["dep:clap", "dep:cpal", "dep:ctrlc", "dep:directories", "dep:hound", "dep:regex", "dep:whisper-rs"]
+cli = ["dep:clap", "dep:cpal", "dep:ctrlc", "dep:directories", "dep:hound", "dep:regex", "dep:sha2", "dep:whisper-rs"]
 
 [[bin]]
 name = "hear"
@@ -25,6 +25,7 @@ reqwest = { version = "0.13", default-features = false, features = ["blocking", 
 regex = { version = "1.12", optional = true }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+sha2 = { version = "0.10", optional = true }
 tempfile = "3.23"
 
 [target.'cfg(target_os = "macos")'.dependencies]

@@ -15,7 +15,7 @@ notes are updated here before the stage is committed and pushed to `main`.
 | 3 | Complete | Split transcript polishing by responsibility. |
 | 4 | Complete | Introduce options-based public library APIs. |
 | 5 | Complete | Split microphone capture, processing, and WAV output. |
-| 6 | Pending | Harden local Whisper configuration and model downloads. |
+| 6 | Complete | Harden local Whisper configuration and model downloads. |
 | 7 | Pending | Add continuous CI and synchronize documentation. |
 | 8 | Pending | Run final verification and reconcile the roadmap. |
 
@@ -27,7 +27,7 @@ notes are updated here before the stage is committed and pushed to `main`.
 - [x] Stage 3 — Transcript polishing
 - [x] Stage 4 — Options-based library API
 - [x] Stage 5 — Microphone recording internals
-- [ ] Stage 6 — Whisper hardening
+- [x] Stage 6 — Whisper hardening
 - [ ] Stage 7 — Continuous verification and documentation
 - [ ] Stage 8 — Final verification
 
@@ -238,7 +238,7 @@ Completed:
 
 ## Stage 6 — Whisper hardening
 
-State: Pending
+State: Complete
 
 Objectives:
 
@@ -255,6 +255,27 @@ Acceptance:
 - Model selection and language behavior are represented by testable typed data.
 - Corrupt or mismatched model downloads are rejected before entering the cache.
 - Existing supported model names remain available.
+
+Completed:
+
+- Replaced `src/engines/whisper.rs` with separate inference orchestration,
+  normalized-audio loading, and model catalog/cache modules.
+- Added typed model metadata covering the existing five model names, exact byte
+  sizes, multilingual capability, and upstream LFS SHA-256 identifiers.
+- Pinned downloads to whisper.cpp model repository revision
+  `5359861c739e955e79d9a303bcbc70fb988958b1` and verify both byte length and
+  SHA-256 before installing or reusing a cached model.
+- Added `--language LANGUAGE` for the Whisper engine. English-only models reject
+  non-English language codes; `large-v3-turbo` accepts language codes and
+  `--language auto`. The backward-compatible default remains English.
+- Added tests for language/model compatibility, normalized WAV loading, catalog
+  lookup, and hashing while copying a download.
+- Added optional `sha2` support to the full CLI feature while keeping the
+  minimal OpenAI library dependency set free of it.
+- Ran formatting, warnings-as-errors Clippy, full-feature tests, library-only
+  tests, doctests, and Rustdoc. All 50 non-live unit tests and the doctest
+  passed; the 2 live OpenAI tests remained intentionally ignored in each
+  applicable test run.
 
 ## Stage 7 — Continuous verification and documentation
 
