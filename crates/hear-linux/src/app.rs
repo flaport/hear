@@ -63,12 +63,33 @@ impl App {
     }
 
     fn initialize(&mut self) -> Result<()> {
-        let manager = GlobalHotKeyManager::new().context("could not initialize global hotkeys")?;
-        manager
-            .register(self.hotkey)
-            .context("could not register Alt-Space")?;
+        let manager = match GlobalHotKeyManager::new() {
+            Ok(manager) => match manager.register(self.hotkey) {
+                Ok(()) => Some(manager),
+                Err(error) => {
+                    eprintln!(
+                        "Could not register Alt-Space: {error}. The tray menu remains available."
+                    );
+                    None
+                }
+            },
+            Err(error) => {
+                eprintln!(
+                    "Could not initialize global hotkeys: {error}. The tray menu remains available."
+                );
+                None
+            }
+        };
 
-        let status = MenuItem::new("Idle — Alt-Space to record", false, None);
+        let status = MenuItem::new(
+            if manager.is_some() {
+                "Idle — Alt-Space to record"
+            } else {
+                "Idle — select Start Recording"
+            },
+            false,
+            None,
+        );
         let toggle = MenuItem::new("Start Recording", true, None);
         let paste = CheckMenuItem::new("Paste Automatically", true, true, None);
         let quit = MenuItem::new("Quit Hear", true, None);
@@ -79,7 +100,7 @@ impl App {
             .with_tooltip("Hear — Idle")
             .with_icon(icon(false)?)
             .build()?;
-        self.hotkey_manager = Some(manager);
+        self.hotkey_manager = manager;
         self.ui = Some(Ui {
             _tray: tray,
             status,
@@ -129,14 +150,23 @@ impl App {
         match result {
             Ok(transcript) => {
                 let paste = self.ui.as_ref().is_some_and(|ui| ui.paste.is_checked());
+                let shortcut_available = self.hotkey_manager.is_some();
                 match delivery::deliver(&transcript, paste) {
                     Ok(true) => self.set_status(
-                        "Pasted — Alt-Space to record",
+                        if shortcut_available {
+                            "Pasted — Alt-Space to record"
+                        } else {
+                            "Pasted — select Start Recording"
+                        },
                         "Start Recording",
                         "Hear — Pasted",
                     ),
                     Ok(false) => self.set_status(
-                        "Copied — Alt-Space to record",
+                        if shortcut_available {
+                            "Copied — Alt-Space to record"
+                        } else {
+                            "Copied — select Start Recording"
+                        },
                         "Start Recording",
                         "Hear — Copied",
                     ),

@@ -10,12 +10,13 @@ mod transcriber;
 
 fn main() {
     let result = match std::env::args().nth(1).as_deref() {
+        Some("tray") => app::App::run(),
         Some("oneshot") => oneshot::run(),
         Some("install-api-key") => credentials::install_api_key(),
         Some("remove-api-key") => credentials::remove_api_key(),
         Some("help" | "--help" | "-h") => {
             println!(
-                "hear-linux\n\nCommands:\n  oneshot          Toggle one-shot recording (for hotkey daemons)\n  install-api-key  Save an OpenAI API key in the system keyring\n  remove-api-key   Remove the stored OpenAI API key"
+                "hear-linux\n\nRun without a command to start the system-tray app.\n\nCommands:\n  tray             Start the system-tray app\n  oneshot          Toggle recording, then transcribe, paste, and exit\n  install-api-key  Save an OpenAI API key in the system keyring\n  remove-api-key   Remove the stored OpenAI API key"
             );
             Ok(())
         }

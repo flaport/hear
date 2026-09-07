@@ -5,6 +5,13 @@ to start recording, press it again to stop, and the app runs the bundled `hear`
 CLI. Successful transcripts are always copied to the clipboard and can
 optionally be pasted into the active application.
 
+For window managers where a tray or application-managed global shortcut is not
+practical, `hear-linux oneshot` provides the same record/transcribe/deliver
+workflow for an external hotkey daemon. Invoke it once to begin recording and a
+second time to stop; the original process then transcribes, pastes, and exits.
+If Alt-Space is already reserved, the tray app remains usable from its menu and
+prints a warning instead of exiting during startup.
+
 The crate intentionally remains separate from the reusable `hear` library.
 Linux UI, hotkey, clipboard, and paste-injection concerns live here;
 transcription engines and formatting remain owned by `hear`.
@@ -47,6 +54,18 @@ sudo apt install wtype      # or: sudo pacman -S wtype
 ```
 
 When neither is available, the transcript stays on the clipboard.
+
+## External hotkey daemons
+
+For example, an SXHKD binding can toggle the one-shot mode with:
+
+```text
+alt + space
+    hear-linux oneshot
+```
+
+This mode does not require a system tray. The ordinary `hear-linux` command
+continues to launch the tray app, so either integration can be used.
 
 ## Desktop integration
 

@@ -175,6 +175,8 @@ crates/hear-linux/install.sh
 ```
 
 See the companion crate's README for keyring setup and paste details.
+The Linux binary also provides a `oneshot` mode for bindings managed by SXHKD
+or another external hotkey daemon; invoke it once to record and again to stop.
 
 ## Experimental Codex engine
 
