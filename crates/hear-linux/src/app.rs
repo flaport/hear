@@ -5,9 +5,9 @@ use anyhow::{Context, Result, bail};
 use global_hotkey::hotkey::{Code, HotKey, Modifiers};
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 use x11rb::connection::Connection;
-use x11rb::wrapper::ConnectionExt as _;
 use x11rb::protocol::xproto::*;
 use x11rb::rust_connection::RustConnection;
+use x11rb::wrapper::ConnectionExt as _;
 
 use crate::delivery;
 use crate::recording::Recorder;
@@ -43,13 +43,11 @@ pub struct App {
 
 impl App {
     pub fn run() -> Result<()> {
-        let (conn, screen_num) = RustConnection::connect(None)
-            .context("could not connect to X11 display")?;
+        let (conn, screen_num) =
+            RustConnection::connect(None).context("could not connect to X11 display")?;
         let screen = &conn.setup().roots[screen_num];
 
         let tray_visual = find_tray_visual(&conn, screen);
-        eprintln!("debug: root depth={}, root visual=0x{:x}", screen.root_depth, screen.root_visual);
-        eprintln!("debug: tray_visual={:?}", tray_visual.map(|(d, v)| (d, format!("0x{v:x}"))));
         let (depth, visual, colormap) = match tray_visual {
             Some((d, v)) => {
                 let cmap = conn.generate_id()?;
@@ -58,16 +56,13 @@ impl App {
             }
             None => (screen.root_depth, screen.root_visual, None),
         };
-        eprintln!("debug: using depth={}, visual=0x{:x}, has_colormap={}", depth, visual, colormap.is_some());
 
         let icon_window = conn.generate_id()?;
         let mut aux = CreateWindowAux::new()
             .background_pixel(COLOR_IDLE)
             .override_redirect(1)
             .event_mask(
-                EventMask::EXPOSURE
-                    | EventMask::BUTTON_PRESS
-                    | EventMask::STRUCTURE_NOTIFY,
+                EventMask::EXPOSURE | EventMask::BUTTON_PRESS | EventMask::STRUCTURE_NOTIFY,
             );
         if let Some(cmap) = colormap {
             aux = aux.colormap(cmap).border_pixel(0);
@@ -76,8 +71,10 @@ impl App {
             depth,
             icon_window,
             screen.root,
-            0, 0,
-            ICON_SIZE, ICON_SIZE,
+            0,
+            0,
+            ICON_SIZE,
+            ICON_SIZE,
             0,
             WindowClass::INPUT_OUTPUT,
             visual,
@@ -112,7 +109,7 @@ impl App {
         )?;
         conn.flush()?;
 
-        request_dock(&conn, screen, icon_window)?;
+        request_dock(&conn, icon_window)?;
 
         let hotkey = HotKey::new(Some(Modifiers::ALT), Code::KeyZ);
         let manager = match GlobalHotKeyManager::new() {
@@ -124,7 +121,9 @@ impl App {
                 }
             },
             Err(error) => {
-                eprintln!("Could not initialize global hotkeys: {error}. Use the tray icon instead.");
+                eprintln!(
+                    "Could not initialize global hotkeys: {error}. Use the tray icon instead."
+                );
                 None
             }
         };
@@ -148,10 +147,7 @@ impl App {
         loop {
             while let Some(event) = self.conn.poll_for_event()? {
                 match event {
-                    x11rb::protocol::Event::Expose(_) => {
-                        eprintln!("debug: Expose event received");
-                        self.draw_icon()?;
-                    }
+                    x11rb::protocol::Event::Expose(_) => self.draw_icon()?,
                     x11rb::protocol::Event::ButtonPress(event) => {
                         if event.detail == 1 {
                             self.toggle_recording();
@@ -245,7 +241,8 @@ impl App {
             self.icon_window,
             &ChangeWindowAttributesAux::new().background_pixel(color),
         )?;
-        self.conn.clear_area(true, self.icon_window, 0, 0, ICON_SIZE, ICON_SIZE)?;
+        self.conn
+            .clear_area(true, self.icon_window, 0, 0, ICON_SIZE, ICON_SIZE)?;
         self.conn.flush()?;
         Ok(())
     }
@@ -267,9 +264,15 @@ impl App {
         self.conn.poly_fill_rectangle(
             self.icon_window,
             gc,
-            &[Rectangle { x: 0, y: 0, width: ICON_SIZE, height: ICON_SIZE }],
+            &[Rectangle {
+                x: 0,
+                y: 0,
+                width: ICON_SIZE,
+                height: ICON_SIZE,
+            }],
         )?;
-        self.conn.change_gc(gc, &ChangeGCAux::new().foreground(color))?;
+        self.conn
+            .change_gc(gc, &ChangeGCAux::new().foreground(color))?;
         let pad = 3;
         let diameter = ICON_SIZE - 2 * pad;
         self.conn.poly_fill_arc(
@@ -328,11 +331,7 @@ fn find_tray_visual(conn: &RustConnection, screen: &Screen) -> Option<(u8, Visua
     None
 }
 
-fn request_dock(
-    conn: &RustConnection,
-    screen: &Screen,
-    icon_window: Window,
-) -> Result<()> {
+fn request_dock(conn: &RustConnection, icon_window: Window) -> Result<()> {
     let tray_atom = conn
         .intern_atom(false, b"_NET_SYSTEM_TRAY_S0")?
         .reply()
@@ -349,14 +348,12 @@ fn request_dock(
         .reply()
         .context("could not find the system tray")?
         .owner;
-    eprintln!("debug: tray_owner=0x{:x}", tray_owner);
     if tray_owner == x11rb::NONE {
         bail!(
             "no system tray is running (no owner for _NET_SYSTEM_TRAY_S0). \
              Make sure your window manager has a systray enabled."
         );
     }
-    eprintln!("debug: sending dock request for window 0x{:x}", icon_window);
 
     conn.send_event(
         false,
@@ -366,10 +363,18 @@ fn request_dock(
             32,
             tray_owner,
             opcode_atom,
-            [x11rb::CURRENT_TIME, SYSTEM_TRAY_REQUEST_DOCK, icon_window, 0, 0],
+            [
+                x11rb::CURRENT_TIME,
+                SYSTEM_TRAY_REQUEST_DOCK,
+                icon_window,
+                0,
+                0,
+            ],
         ),
     )?;
-    conn.map_window(icon_window)?;
+    // The tray manager maps the window after embedding it. Mapping it here can
+    // race with reparenting and make some managers discard the icon on the
+    // resulting UnmapNotify event.
     conn.flush()?;
     Ok(())
 }
