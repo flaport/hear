@@ -1,18 +1,43 @@
+use std::io::Write;
 use std::process::Command;
+use std::process::Stdio;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 
 pub fn deliver(transcript: &str, paste: bool) -> Result<bool> {
-    arboard::Clipboard::new()
-        .context("could not access the clipboard")?
-        .set_text(transcript)
-        .context("could not copy the transcript")?;
+    copy_to_clipboard(transcript)?;
 
     if paste && post_paste() {
         Ok(true)
     } else {
         Ok(false)
     }
+}
+
+fn copy_to_clipboard(text: &str) -> Result<()> {
+    let (program, arguments): (&str, &[&str]) = if is_wayland() {
+        ("wl-copy", &[])
+    } else {
+        ("xclip", &["-selection", "clipboard"])
+    };
+    let mut child = Command::new(program)
+        .args(arguments)
+        .stdin(Stdio::piped())
+        .spawn()
+        .with_context(|| format!("could not launch {program} to copy the transcript"))?;
+    child
+        .stdin
+        .take()
+        .context("clipboard process did not accept input")?
+        .write_all(text.as_bytes())
+        .context("could not send the transcript to the clipboard process")?;
+    let status = child
+        .wait()
+        .context("could not wait for the clipboard process")?;
+    if !status.success() {
+        bail!("{program} failed with {status}");
+    }
+    Ok(())
 }
 
 fn post_paste() -> bool {

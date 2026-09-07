@@ -40,20 +40,21 @@ The command reads the key without echoing it. Remove it with
 `hear-linux remove-api-key`. An inherited `OPENAI_API_KEY` takes precedence over
 the keyring entry during development.
 
-## Automatic paste
+## Clipboard and automatic paste
 
-The "Paste Automatically" option requires `xdotool` (X11) or `wtype` (Wayland)
-to be installed:
+Clipboard persistence requires `xclip` on X11 or `wl-copy` from
+`wl-clipboard` on Wayland. The "Paste Automatically" option additionally
+requires `xdotool` (X11) or `wtype` (Wayland):
 
 ```sh
 # X11
-sudo apt install xdotool   # or: sudo pacman -S xdotool
+sudo apt install xclip xdotool   # or: sudo pacman -S xclip xdotool
 
 # Wayland
-sudo apt install wtype      # or: sudo pacman -S wtype
+sudo apt install wl-clipboard wtype   # or: sudo pacman -S wl-clipboard wtype
 ```
 
-When neither is available, the transcript stays on the clipboard.
+If paste injection is unavailable, the transcript remains on the clipboard.
 
 ## External hotkey daemons
 

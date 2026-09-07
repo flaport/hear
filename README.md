@@ -166,7 +166,8 @@ The separate [`hear-linux`](crates/hear-linux) workspace crate provides a
 system-tray application for Linux desktops. Press Alt-Space once to start
 recording and again to stop. It invokes a sibling `hear` binary, copies
 successful transcripts to the clipboard, and can paste them into the active
-application when `xdotool` (X11) or `wtype` (Wayland) is installed.
+application. Clipboard persistence uses `xclip` (X11) or `wl-copy` (Wayland);
+automatic paste uses `xdotool` (X11) or `wtype` (Wayland).
 
 Install both binaries and a `.desktop` launcher entry with:
 

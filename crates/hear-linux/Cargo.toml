@@ -8,7 +8,6 @@ publish = false
 
 [dependencies]
 anyhow = "1.0"
-arboard = "3.6"
 cpal = "0.18"
 global-hotkey = "0.8"
 gtk = "0.18"
