@@ -8,16 +8,19 @@ use tempfile::TempPath;
 use crate::app::AppEvent;
 use crate::credentials;
 
-pub fn transcribe_async(recording: TempPath, tx: mpsc::Sender<AppEvent>) {
+pub fn transcribe_async(
+    recording: TempPath,
+    tx: mpsc::Sender<AppEvent>,
+    hear_options: Vec<String>,
+) {
     thread::spawn(move || {
-        let result = run(&recording).map_err(|error| format!("{error:#}"));
+        let result = run(&recording, &hear_options).map_err(|error| format!("{error:#}"));
         let _ = tx.send(AppEvent::TranscriptionFinished(result));
     });
 }
 
-pub(crate) fn run(recording: &Path) -> anyhow::Result<String> {
-    let mut command = Command::new(helper_path());
-    command.arg(recording);
+pub(crate) fn run(recording: &Path, hear_options: &[String]) -> anyhow::Result<String> {
+    let mut command = helper_command(recording, hear_options);
     if std::env::var_os("OPENAI_API_KEY").is_none()
         && let Some(api_key) = credentials::stored_api_key()?
     {
@@ -37,6 +40,12 @@ pub(crate) fn run(recording: &Path) -> anyhow::Result<String> {
         anyhow::bail!("hear returned an empty transcript");
     }
     Ok(transcript.to_owned())
+}
+
+fn helper_command(recording: &Path, hear_options: &[String]) -> Command {
+    let mut command = Command::new(helper_path());
+    command.args(hear_options).arg(recording);
+    command
 }
 
 fn helper_path() -> PathBuf {
@@ -63,5 +72,14 @@ mod tests {
         if std::env::var_os("HEAR_HELPER_PATH").is_none() {
             assert_eq!(helper_path(), PathBuf::from("hear"));
         }
+    }
+
+    #[test]
+    fn configured_options_precede_the_recording_path() {
+        let options = vec!["--engine".to_owned(), "whisper".to_owned()];
+        let command = helper_command(Path::new("recording.wav"), &options);
+        let arguments: Vec<_> = command.get_args().collect();
+
+        assert_eq!(arguments, ["--engine", "whisper", "recording.wav"]);
     }
 }

@@ -2,6 +2,7 @@
 compile_error!("hear-linux only supports Linux");
 
 mod app;
+mod config;
 mod credentials;
 mod delivery;
 mod oneshot;
@@ -10,8 +11,8 @@ mod transcriber;
 
 fn main() {
     let result = match std::env::args().nth(1).as_deref() {
-        Some("tray") => app::App::run(),
-        Some("oneshot") => oneshot::run(),
+        Some("tray") => config::Config::load().and_then(app::App::run),
+        Some("oneshot") => config::Config::load().and_then(oneshot::run),
         Some("install-api-key") => credentials::install_api_key(),
         Some("remove-api-key") => credentials::remove_api_key(),
         Some("help" | "--help" | "-h") => {
@@ -21,7 +22,7 @@ fn main() {
             Ok(())
         }
         Some(command) => Err(anyhow::anyhow!("unknown command: {command}")),
-        None => app::App::run(),
+        None => config::Config::load().and_then(app::App::run),
     };
     if let Err(error) = result {
         eprintln!("hear-app failed: {error:#}");

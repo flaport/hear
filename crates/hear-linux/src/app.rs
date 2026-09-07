@@ -2,13 +2,14 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
-use global_hotkey::hotkey::{Code, HotKey, Modifiers};
+use global_hotkey::hotkey::HotKey;
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::*;
 use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as _;
 
+use crate::config::Config;
 use crate::delivery;
 use crate::recording::Recorder;
 use crate::transcriber;
@@ -35,6 +36,7 @@ pub struct App {
     icon_window: Window,
     state: State,
     paste: bool,
+    config: Config,
     event_rx: mpsc::Receiver<AppEvent>,
     event_tx: mpsc::Sender<AppEvent>,
     hotkey: HotKey,
@@ -42,7 +44,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn run() -> Result<()> {
+    pub fn run(config: Config) -> Result<()> {
         let (conn, screen_num) =
             RustConnection::connect(None).context("could not connect to X11 display")?;
         let screen = &conn.setup().roots[screen_num];
@@ -111,12 +113,12 @@ impl App {
 
         request_dock(&conn, icon_window)?;
 
-        let hotkey = HotKey::new(Some(Modifiers::ALT), Code::KeyZ);
+        let hotkey = config.hotkey;
         let manager = match GlobalHotKeyManager::new() {
             Ok(manager) => match manager.register(hotkey) {
                 Ok(()) => Some(manager),
                 Err(error) => {
-                    eprintln!("Could not register Alt-Z: {error}. Use the tray icon instead.");
+                    eprintln!("Could not register {hotkey}: {error}. Use the tray icon instead.");
                     None
                 }
             },
@@ -133,7 +135,8 @@ impl App {
             conn,
             icon_window,
             state: State::Idle,
-            paste: true,
+            paste: config.paste_automatically,
+            config,
             event_rx,
             event_tx,
             hotkey,
@@ -201,7 +204,7 @@ impl App {
                     eprintln!("Transcribing…");
                     let _ = self.update_icon();
                     let tx = self.event_tx.clone();
-                    transcriber::transcribe_async(recording, tx);
+                    transcriber::transcribe_async(recording, tx, self.config.hear_options.clone());
                 }
                 Err(error) => {
                     self.state = State::Idle;
@@ -219,7 +222,7 @@ impl App {
         self.state = State::Idle;
         let _ = self.update_icon();
         match result {
-            Ok(transcript) => match delivery::deliver(&transcript, self.paste) {
+            Ok(transcript) => match delivery::deliver(&transcript, self.paste, &self.config) {
                 Ok(true) => eprintln!("Pasted."),
                 Ok(false) => eprintln!("Copied to clipboard."),
                 Err(error) => eprintln!("Could not deliver transcript: {error:#}"),

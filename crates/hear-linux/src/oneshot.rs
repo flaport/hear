@@ -7,9 +7,10 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 
+use crate::config::Config;
 use crate::recording::Recorder;
 
-pub fn run() -> Result<()> {
+pub fn run(config: Config) -> Result<()> {
     let pid_file = pid_path();
     if signal_running_instance(&pid_file) {
         return Ok(());
@@ -35,8 +36,8 @@ pub fn run() -> Result<()> {
 
     let recording = recorder.finish()?;
     eprintln!("Transcribing…");
-    let transcript = crate::transcriber::run(&recording)?;
-    if crate::delivery::deliver(&transcript, true)? {
+    let transcript = crate::transcriber::run(&recording, &config.hear_options)?;
+    if crate::delivery::deliver(&transcript, config.paste_automatically, &config)? {
         eprintln!("Pasted.");
     } else {
         eprintln!("Copied to clipboard.");

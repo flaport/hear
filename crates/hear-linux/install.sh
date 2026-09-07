@@ -16,7 +16,7 @@ cat > "$desktop_dir/hear.desktop" << DESKTOP
 [Desktop Entry]
 Type=Application
 Name=Hear
-Comment=Dictation companion — press Alt-Z to transcribe
+Comment=Dictation companion — press Alt-X to transcribe
 Exec=$prefix/bin/hear-app
 Terminal=false
 Categories=Utility;Audio;
