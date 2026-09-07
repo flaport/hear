@@ -170,8 +170,8 @@ where
 }
 
 fn deliver(transcript: &str) {
-    if let Err(error) = arboard::Clipboard::new().and_then(|mut cb| cb.set_text(transcript)) {
-        eprintln!("Could not copy to clipboard: {error}");
+    if !copy_to_clipboard(transcript) {
+        eprintln!("Could not copy to clipboard.");
         return;
     }
 
@@ -179,6 +179,35 @@ fn deliver(transcript: &str) {
         eprintln!("Pasted.");
     } else {
         eprintln!("Copied to clipboard.");
+    }
+}
+
+fn copy_to_clipboard(text: &str) -> bool {
+    if is_wayland() {
+        std::process::Command::new("wl-copy")
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .and_then(|mut child| {
+                use std::io::Write;
+                if let Some(stdin) = child.stdin.as_mut() {
+                    stdin.write_all(text.as_bytes())?;
+                }
+                child.wait()
+            })
+            .is_ok_and(|s| s.success())
+    } else {
+        std::process::Command::new("xclip")
+            .args(["-selection", "clipboard"])
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .and_then(|mut child| {
+                use std::io::Write;
+                if let Some(stdin) = child.stdin.as_mut() {
+                    stdin.write_all(text.as_bytes())?;
+                }
+                child.wait()
+            })
+            .is_ok_and(|s| s.success())
     }
 }
 
