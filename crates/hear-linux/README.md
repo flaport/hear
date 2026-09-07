@@ -55,6 +55,8 @@ sudo apt install wl-clipboard wtype   # or: sudo pacman -S wl-clipboard wtype
 ```
 
 If paste injection is unavailable, the transcript remains on the clipboard.
+On X11, paste injection uses Alt-V when the focused application is Alacritty
+and Ctrl-V for other applications.
 
 ## External hotkey daemons
 
