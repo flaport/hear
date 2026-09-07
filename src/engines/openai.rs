@@ -7,6 +7,7 @@ use serde::Deserialize;
 use tempfile::TempDir;
 
 use crate::ffmpeg::{require_ffmpeg, run_ffmpeg};
+use crate::openai_transport;
 
 const MAX_UPLOAD_BYTES: u64 = 25_000_000;
 const TRANSCRIPTIONS_URL: &str = "https://api.openai.com/v1/audio/transcriptions";
@@ -16,31 +17,19 @@ struct TranscriptionResponse {
     text: String,
 }
 
-#[derive(Debug, Deserialize)]
-struct ApiErrorEnvelope {
-    error: ApiError,
-}
-
-#[derive(Debug, Deserialize)]
-struct ApiError {
-    message: String,
-}
-
 struct Uploads {
     paths: Vec<PathBuf>,
     _temporary_files: Option<TempDir>,
 }
 
 pub fn transcribe(input: &Path, vocabulary: &[String]) -> Result<String> {
-    let api_key = std::env::var("OPENAI_API_KEY").map_err(|_| {
+    let api_key = openai_transport::api_key().map_err(|_| {
         anyhow::anyhow!(
             "OPENAI_API_KEY is not set; set it or choose --engine codex/2 or --engine whisper/3"
         )
     })?;
     let uploads = prepare_uploads(input)?;
-    let client = Client::builder()
-        .build()
-        .context("could not initialize the OpenAI HTTP client")?;
+    let client = openai_transport::client()?;
 
     let mut transcripts = Vec::with_capacity(uploads.paths.len());
     for (index, path) in uploads.paths.iter().enumerate() {
@@ -66,17 +55,7 @@ fn upload(client: &Client, api_key: &str, path: &Path, vocabulary: &[String]) ->
         .multipart(form)
         .send()
         .context("OpenAI transcription request failed")?;
-    let status = response.status();
-    let body = response
-        .text()
-        .context("could not read the OpenAI transcription response")?;
-
-    if !status.is_success() {
-        let message = serde_json::from_str::<ApiErrorEnvelope>(&body)
-            .map(|envelope| envelope.error.message)
-            .unwrap_or_else(|_| body.trim().to_owned());
-        bail!("OpenAI transcription failed ({status}): {message}");
-    }
+    let body = openai_transport::response_body(response, "transcription")?;
 
     let response: TranscriptionResponse = serde_json::from_str(&body)
         .context("OpenAI returned an unexpected transcription response")?;

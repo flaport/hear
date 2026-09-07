@@ -5,6 +5,7 @@ mod ffmpeg;
 mod formatter;
 #[path = "engines/openai.rs"]
 mod openai;
+mod openai_transport;
 
 use std::path::Path;
 

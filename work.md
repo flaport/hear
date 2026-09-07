@@ -10,7 +10,7 @@ notes are updated here before the stage is committed and pushed to `main`.
 | Stage | State | Summary |
 | --- | --- | --- |
 | 0 | Complete | Record the roadmap and establish a clean baseline. |
-| 1 | Pending | Centralize shared OpenAI HTTP behavior. |
+| 1 | Complete | Centralize shared OpenAI HTTP behavior. |
 | 2 | Pending | Split OpenAI transcription and harden upload preparation. |
 | 3 | Pending | Split transcript polishing by responsibility. |
 | 4 | Pending | Introduce options-based public library APIs. |
@@ -18,6 +18,18 @@ notes are updated here before the stage is committed and pushed to `main`.
 | 6 | Pending | Harden local Whisper configuration and model downloads. |
 | 7 | Pending | Add continuous CI and synchronize documentation. |
 | 8 | Pending | Run final verification and reconcile the roadmap. |
+
+## Stage checklist
+
+- [x] Stage 0 — Roadmap and baseline
+- [x] Stage 1 — Shared OpenAI transport
+- [ ] Stage 2 — OpenAI transcription and uploads
+- [ ] Stage 3 — Transcript polishing
+- [ ] Stage 4 — Options-based library API
+- [ ] Stage 5 — Microphone recording internals
+- [ ] Stage 6 — Whisper hardening
+- [ ] Stage 7 — Continuous verification and documentation
+- [ ] Stage 8 — Final verification
 
 ## Stage 0 — Roadmap and baseline
 
@@ -46,7 +58,7 @@ Acceptance: complete when this roadmap is committed and pushed.
 
 ## Stage 1 — Shared OpenAI transport
 
-State: Pending
+State: Complete
 
 Objectives:
 
@@ -64,6 +76,18 @@ Acceptance:
 - Unit tests cover successful body extraction and structured/fallback API
   errors without network access.
 - Formatting, Clippy, and both feature configurations pass.
+
+Completed:
+
+- Added `src/openai_transport.rs` for API-key lookup, blocking client creation,
+  response-body extraction, and consistent structured or plain-text API errors.
+- Removed the duplicated transport setup and error-envelope types from OpenAI
+  transcription and transcript polishing.
+- Added three network-free transport tests covering success, structured errors,
+  and plain-text fallback errors.
+- Ran formatting, warnings-as-errors Clippy, full-feature tests, and
+  library-only tests. All 34 non-live tests passed; the 2 live OpenAI tests
+  remained intentionally ignored in each applicable test run.
 
 ## Stage 2 — OpenAI transcription and uploads
 

@@ -1,9 +1,9 @@
 use anyhow::{Context, Result, bail};
-use reqwest::blocking::Client;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::FormatContext;
+use crate::openai_transport;
 
 const RESPONSES_URL: &str = "https://api.openai.com/v1/responses";
 const FORMATTER_MODEL: &str = "gpt-5.6-luna";
@@ -40,16 +40,6 @@ struct FormattedTranscript {
     text: String,
 }
 
-#[derive(Debug, Deserialize)]
-struct ApiErrorEnvelope {
-    error: ApiError,
-}
-
-#[derive(Debug, Deserialize)]
-struct ApiError {
-    message: String,
-}
-
 struct PreparedTranscript<'a> {
     context: FormatContext,
     body: &'a str,
@@ -66,11 +56,9 @@ pub fn polish(
         return Ok(prepared.body.to_owned());
     }
 
-    let api_key = std::env::var("OPENAI_API_KEY")
+    let api_key = openai_transport::api_key()
         .map_err(|_| anyhow::anyhow!("OPENAI_API_KEY is not set; it is required for --polish"))?;
-    let client = Client::builder()
-        .build()
-        .context("could not initialize the OpenAI HTTP client")?;
+    let client = openai_transport::client()?;
     let request = build_request(
         prepared.context,
         prepared.body,
@@ -83,16 +71,7 @@ pub fn polish(
         .json(&request)
         .send()
         .context("OpenAI formatting request failed")?;
-    let status = response.status();
-    let body = response
-        .text()
-        .context("could not read the OpenAI formatting response")?;
-    if !status.is_success() {
-        let message = serde_json::from_str::<ApiErrorEnvelope>(&body)
-            .map(|envelope| envelope.error.message)
-            .unwrap_or_else(|_| body.trim().to_owned());
-        bail!("OpenAI formatting failed ({status}): {message}");
-    }
+    let body = openai_transport::response_body(response, "formatting")?;
 
     parse_response(&body)
 }
