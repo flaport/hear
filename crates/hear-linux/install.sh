@@ -4,11 +4,13 @@ set -eu
 repository_root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 prefix="${PREFIX:-$HOME/.local}"
 
-cargo build --manifest-path "$repository_root/Cargo.toml" --locked --release -p hear -p hear-linux
+cargo build --manifest-path "$repository_root/Cargo.toml" --locked --release \
+    -p hear -p hear-linux -p hear-local-polish
 
 mkdir -p "$prefix/bin"
 cp "$repository_root/target/release/hear" "$prefix/bin/hear"
 cp "$repository_root/target/release/hear-app" "$prefix/bin/hear-app"
+cp "$repository_root/target/release/hear-local-polish" "$prefix/bin/hear-local-polish"
 
 desktop_dir="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
 mkdir -p "$desktop_dir"
@@ -22,5 +24,5 @@ Terminal=false
 Categories=Utility;Audio;
 DESKTOP
 
-echo "Installed hear and hear-app to $prefix/bin"
+echo "Installed hear, hear-app, and hear-local-polish to $prefix/bin"
 echo "Desktop entry written to $desktop_dir/hear.desktop"

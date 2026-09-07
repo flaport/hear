@@ -11,7 +11,7 @@ use anyhow::{Context, Result, bail};
 use clap::Parser;
 use tempfile::TempPath;
 
-use crate::cli::{Cli, Command, Engine};
+use crate::cli::{Cli, Command, Engine, PolishEngine};
 
 enum RunOutcome {
     Completed,
@@ -88,14 +88,20 @@ fn run() -> Result<RunOutcome> {
     let transcript = if cli.should_polish() {
         eprintln!("Polishing transcript...");
         let dictionary_context = dictionary.formatter_context();
-        let mut options = hear::PolishOptions::new().model(&cli.polish_model);
+        let mut options = hear::PolishOptions::new();
+        if let Some(model) = cli.polish_model.as_deref() {
+            options = options.model(model);
+        }
         if let Some(context) = cli.format_context() {
             options = options.context(context);
         }
         if let Some(dictionary_context) = dictionary_context.as_deref() {
             options = options.dictionary_context(dictionary_context);
         }
-        hear::polish_with_options(&raw_transcript, &options)?
+        match cli.polish_engine {
+            PolishEngine::Openai => hear::polish_with_options(&raw_transcript, &options)?,
+            PolishEngine::Local => hear::polish_local_with_options(&raw_transcript, &options)?,
+        }
     } else {
         raw_transcript
     };

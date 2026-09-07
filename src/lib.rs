@@ -36,7 +36,7 @@ impl<'a> PolishOptions<'a> {
         Self::default()
     }
 
-    /// Select the OpenAI model used to format the transcript.
+    /// Select the model used to format the transcript.
     pub fn model(mut self, model: &'a str) -> Self {
         self.model = Some(model);
         self
@@ -122,6 +122,21 @@ pub fn transcribe_openai_raw(input: &Path, vocabulary: &[String]) -> Result<Stri
 /// Polish an existing transcript using named options.
 pub fn polish_with_options(transcript: &str, options: &PolishOptions<'_>) -> Result<String> {
     formatter::polish(
+        transcript,
+        options.model,
+        options.context,
+        options.dictionary_context,
+        options.instruction,
+    )
+}
+
+/// Polish an existing transcript locally with the `hear-local-polish` helper.
+///
+/// The recommended Qwen model is downloaded and cached on first use unless a
+/// model name or GGUF path was supplied through [`PolishOptions::model`].
+#[cfg(feature = "local-polish")]
+pub fn polish_local_with_options(transcript: &str, options: &PolishOptions<'_>) -> Result<String> {
+    formatter::polish_local(
         transcript,
         options.model,
         options.context,

@@ -62,6 +62,7 @@ Transcripts are polished for their inferred purpose by default:
 hear recording.m4a
 hear --record --raw-output raw.txt
 hear recording.m4a --context email
+hear recording.m4a --polish-engine local
 hear recording.m4a --no-polish
 ```
 
@@ -81,11 +82,29 @@ word, so `--context plain` is an escape hatch for text such as "Message
 received yesterday." `verbatim` removes a spoken directive but otherwise skips
 the formatting request. Use `--no-polish` to bypass LLM formatting entirely.
 
-Polishing uses `gpt-5.6-luna` by default through the OpenAI Responses API and requires
-`OPENAI_API_KEY`. This means transcript text is sent to OpenAI even when audio
-was transcribed locally with whisper.cpp. Use `--no-polish` for a fully local
-Whisper workflow. Use `--raw-output PATH` to keep the original transcript
-alongside the formatted result.
+Polishing uses `gpt-5.6-luna` by default through the OpenAI Responses API and
+requires `OPENAI_API_KEY`. This means transcript text is sent to OpenAI even
+when audio was transcribed locally with whisper.cpp.
+
+Use `--polish-engine local` to polish with the bundled `hear-local-polish`
+helper and Qwen3.5-2B instead. Its 1.4 GB Q4_K_M GGUF file is downloaded,
+checksum-verified, and stored in the platform's standard `hear/models` cache
+on first use. Local polishing runs on the CPU on Linux and Intel macOS, and
+uses Metal acceleration on Apple silicon. `--polish-model` can select the
+built-in `qwen3.5-2b` model or a local GGUF file path. For example:
+
+```sh
+hear recording.m4a --engine whisper --polish-engine local
+hear recording.m4a --polish-engine local --polish-model /models/custom.gguf
+```
+
+The helper is a separate process because whisper.cpp and llama.cpp each vendor
+GGML; isolating them prevents duplicate native symbols in the main binary. Its
+`llama-cpp-2` dependency is pinned exactly so GGUF compatibility changes are
+intentional upgrades.
+
+Use `--no-polish` to skip formatting entirely. Use `--raw-output PATH` to keep
+the original transcript alongside the formatted result.
 
 ## Personal dictionary
 
@@ -242,5 +261,8 @@ Use `transcribe_openai_raw` when only the raw transcript is needed, and
 `polish_with_options` to format text that has already been transcribed. The
 older positional functions remain available for compatibility.
 
-The library reads `OPENAI_API_KEY` from the environment. Enable the default
-`cli` feature to build the full `hear` binary with recording and local Whisper.
+The library reads `OPENAI_API_KEY` from the environment. The default `cli`
+feature builds the full `hear` binary with recording and local Whisper and
+includes the `local-polish` client feature. That feature exposes
+`polish_local_with_options`, which locates `hear-local-polish` beside the
+current executable or on `PATH`.

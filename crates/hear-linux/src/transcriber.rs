@@ -112,8 +112,8 @@ mod tests {
             [
                 "--engine",
                 "whisper",
-                "--polish-model",
-                "gpt-5.6-luna",
+                "--polish-engine",
+                "openai",
                 "--context",
                 "auto",
                 "recording.wav"

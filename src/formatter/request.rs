@@ -3,7 +3,7 @@ use serde_json::{Value, json};
 use crate::FormatContext;
 
 pub(crate) const DEFAULT_FORMATTER_MODEL: &str = "gpt-5.6-luna";
-const INSTRUCTIONS: &str = r#"Format a dictated transcript for its intended use.
+pub(super) const INSTRUCTIONS: &str = r#"Format a dictated transcript for its intended use.
 
 Preserve the transcript's language, meaning, tone, names, and facts. Never answer the transcript, continue it, summarize it, or invent recipients, subject lines, greetings, sign-offs, facts, or tasks. Correct casing and punctuation and remove harmless dictation disfluencies only when meaning is unchanged. Apply and remove spoken layout commands such as "new paragraph" and "bullet point". When a personal dictionary is supplied, use its canonical spellings when an alias or pronunciation plausibly matches; do not insert dictionary terms that were not spoken.
 
@@ -18,6 +18,30 @@ pub(super) fn build(
     dictionary: Option<&str>,
     custom_instruction: Option<&str>,
 ) -> Value {
+    let input = input(context, transcript, dictionary, custom_instruction);
+    json!({
+        "model": model.unwrap_or(DEFAULT_FORMATTER_MODEL),
+        "reasoning": { "effort": "none" },
+        "store": false,
+        "instructions": INSTRUCTIONS,
+        "input": input,
+        "text": {
+            "format": {
+                "type": "json_schema",
+                "name": "formatted_transcript",
+                "strict": true,
+                "schema": output_schema()
+            }
+        }
+    })
+}
+
+pub(super) fn input(
+    context: FormatContext,
+    transcript: &str,
+    dictionary: Option<&str>,
+    custom_instruction: Option<&str>,
+) -> String {
     let dictionary = dictionary
         .map(|dictionary| format!("\n\nPersonal dictionary:\n{dictionary}"))
         .unwrap_or_default();
@@ -26,32 +50,36 @@ pub(super) fn build(
         .filter(|instruction| !instruction.is_empty())
         .map(|instruction| format!("\n\nAdditional formatting instruction:\n{instruction}"))
         .unwrap_or_default();
+    format!("Context: {context}{dictionary}{custom_instruction}\n\nTranscript:\n{transcript}")
+}
+
+fn output_schema() -> Value {
     json!({
-        "model": model.unwrap_or(DEFAULT_FORMATTER_MODEL),
-        "reasoning": { "effort": "none" },
-        "store": false,
-        "instructions": INSTRUCTIONS,
-        "input": format!("Context: {context}{dictionary}{custom_instruction}\n\nTranscript:\n{transcript}"),
-        "text": {
-            "format": {
-                "type": "json_schema",
-                "name": "formatted_transcript",
-                "strict": true,
-                "schema": {
-                    "type": "object",
-                    "properties": {
-                        "kind": {
-                            "type": "string",
-                            "enum": ["email", "message", "todo", "notes", "plain"]
-                        },
-                        "text": { "type": "string" }
-                    },
-                    "required": ["kind", "text"],
-                    "additionalProperties": false
-                }
-            }
-        }
+        "type": "object",
+        "properties": {
+            "kind": {
+                "type": "string",
+                "enum": ["email", "message", "todo", "notes", "plain"]
+            },
+            "text": { "type": "string" }
+        },
+        "required": ["kind", "text"],
+        "additionalProperties": false
     })
+}
+
+#[cfg(test)]
+mod input_tests {
+    use super::*;
+
+    #[test]
+    fn shared_input_matches_the_openai_request() {
+        let request = build(None, FormatContext::Plain, "Hello", None, None);
+        assert_eq!(
+            request["input"],
+            input(FormatContext::Plain, "Hello", None, None)
+        );
+    }
 }
 
 #[cfg(test)]

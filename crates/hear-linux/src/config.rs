@@ -21,6 +21,7 @@ pub struct HearConfig {
     pub engine: String,
     pub model: String,
     pub language: String,
+    pub polish_engine: String,
     pub polish_model: String,
     pub context: String,
     pub polish: bool,
@@ -50,7 +51,8 @@ impl Default for HearConfig {
             engine: "gpt-transcribe".to_owned(),
             model: String::new(),
             language: String::new(),
-            polish_model: "gpt-5.6-luna".to_owned(),
+            polish_engine: "openai".to_owned(),
+            polish_model: String::new(),
             context: "auto".to_owned(),
             polish: true,
             save_recording: String::new(),
@@ -111,6 +113,7 @@ impl HearConfig {
         let mut arguments = vec!["--engine".to_owned(), self.engine.clone()];
         push_value(&mut arguments, "--model", &self.model);
         push_value(&mut arguments, "--language", &self.language);
+        push_value(&mut arguments, "--polish-engine", &self.polish_engine);
         push_value(&mut arguments, "--polish-model", &self.polish_model);
         push_value(&mut arguments, "--context", &self.context);
         if !self.polish {
@@ -136,6 +139,9 @@ impl HearConfig {
         if !matches!(self.engine.as_str(), "gpt-transcribe" | "codex" | "whisper") {
             bail!("unknown hear engine: {:?}", self.engine);
         }
+        if !matches!(self.polish_engine.as_str(), "openai" | "local") {
+            bail!("unknown hear polishing engine: {:?}", self.polish_engine);
+        }
         if !matches!(
             self.context.as_str(),
             "auto" | "email" | "message" | "todo" | "notes" | "plain" | "verbatim"
@@ -147,9 +153,6 @@ impl HearConfig {
         }
         if nonempty(&self.language).is_some() && self.engine != "whisper" {
             bail!("hear.language is only valid with the whisper engine");
-        }
-        if nonempty(&self.polish_model).is_none() {
-            bail!("hear.polish_model cannot be empty");
         }
         if !self.polish && nonempty(&self.raw_output).is_some() {
             bail!("hear.raw_output cannot be used when hear.polish is false");
@@ -210,6 +213,7 @@ Alacritty = "alt+v"
 engine = "whisper"
 model = "large-v3"
 language = "nl"
+polish_engine = "openai"
 polish_model = "gpt-5.6-luna"
 context = "message"
 polish = true
@@ -227,6 +231,7 @@ force = true
         assert_eq!(config.hear.engine, "whisper");
         assert_eq!(config.hear.model, "large-v3");
         assert_eq!(config.hear.language, "nl");
+        assert_eq!(config.hear.polish_engine, "openai");
         assert!(config.hear.force);
         assert_eq!(config.paste_shortcut_for(Some("alacritty")), "alt+v");
         assert_eq!(config.paste_shortcut_for(Some("Firefox")), "ctrl+shift+v");
@@ -240,6 +245,8 @@ force = true
         assert!(config.paste_automatically);
         assert_eq!(config.hear.engine, "gpt-transcribe");
         assert!(config.hear.model.is_empty());
+        assert_eq!(config.hear.polish_engine, "openai");
+        assert!(config.hear.polish_model.is_empty());
         assert_eq!(config.paste_shortcut_for(Some("Alacritty")), "alt+v");
         assert_eq!(config.paste_shortcut_for(None), "ctrl+v");
     }
@@ -261,8 +268,8 @@ force = true
                 "whisper",
                 "--language",
                 "nl",
-                "--polish-model",
-                "gpt-5.6-luna",
+                "--polish-engine",
+                "openai",
                 "--context",
                 "auto",
                 "--no-polish",

@@ -21,7 +21,7 @@ transcription engines and formatting remain owned by `hear`.
 Build both binaries:
 
 ```sh
-cargo build -p hear -p hear-linux
+cargo build -p hear -p hear-linux -p hear-local-polish
 ```
 
 Install the companion and helper binary:
@@ -58,7 +58,8 @@ Alacritty = "alt+v"
 engine = "gpt-transcribe"
 model = ""
 language = ""
-polish_model = "gpt-5.6-luna"
+polish_engine = "openai"
+polish_model = ""
 context = "auto"
 polish = true
 save_recording = ""
@@ -67,8 +68,8 @@ raw_output = ""
 force = false
 ```
 
-Empty paths disable the corresponding file output, while an empty transcription
-`model` or `language` selects the CLI default. For example, local Dutch
+Empty paths disable the corresponding file output, while an empty `model`,
+`language`, or `polish_model` selects the CLI default. For example, local Dutch
 transcription without polishing can be selected with:
 
 ```toml
@@ -77,6 +78,16 @@ engine = "whisper"
 model = "large-v3-turbo"
 language = "nl"
 polish = false
+```
+
+To keep both the audio and transcript on the machine, select local polishing:
+
+```toml
+[hear]
+engine = "whisper"
+model = "large-v3-turbo"
+language = "nl"
+polish_engine = "local"
 ```
 
 Audio capture remains app-owned and is always enabled when the hotkey is used.

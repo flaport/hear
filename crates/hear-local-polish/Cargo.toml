@@ -1,0 +1,19 @@
+[package]
+name = "hear-local-polish"
+version = "0.4.0"
+edition = "2024"
+description = "Local transcript polishing for hear"
+license = "MIT"
+publish = false
+
+[dependencies]
+anyhow = "1.0"
+directories = "6.0"
+encoding_rs = "0.8"
+# Keep the native runtime exact so GGUF/model support changes are deliberate.
+llama-cpp-2 = "=0.1.156"
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "rustls"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+tempfile = "3.23"

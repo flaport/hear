@@ -14,6 +14,12 @@ pub enum Engine {
     Whisper,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum PolishEngine {
+    Openai,
+    Local,
+}
+
 impl fmt::Display for Engine {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
@@ -85,9 +91,13 @@ pub struct Cli {
     #[arg(long, value_name = "MODEL")]
     pub model: Option<String>,
 
-    /// OpenAI model used to polish the transcript.
-    #[arg(long, default_value = "gpt-5.6-luna")]
-    pub polish_model: String,
+    /// Engine used to polish the transcript.
+    #[arg(long, value_enum, default_value_t = PolishEngine::Openai)]
+    pub polish_engine: PolishEngine,
+
+    /// Polishing model; defaults to gpt-5.6-luna or qwen3.5-2b.
+    #[arg(long, value_name = "MODEL_OR_GGUF_PATH")]
+    pub polish_model: Option<String>,
 
     /// Spoken language for Whisper, or auto (defaults to en).
     #[arg(long, value_name = "LANGUAGE")]
@@ -126,7 +136,8 @@ impl Cli {
                 || self.save_recording.is_some()
                 || self.engine != Engine::GptTranscribe
                 || self.model.is_some()
-                || self.polish_model != "gpt-5.6-luna"
+                || self.polish_engine != PolishEngine::Openai
+                || self.polish_model.is_some()
                 || self.language.is_some()
                 || self.output.is_some()
                 || self.polish
@@ -205,8 +216,17 @@ mod tests {
     fn defaults_to_gpt_transcribe() {
         let cli = Cli::try_parse_from(["hear", "message.mp3"]).unwrap();
         assert_eq!(cli.engine, Engine::GptTranscribe);
-        assert_eq!(cli.polish_model, "gpt-5.6-luna");
+        assert_eq!(cli.polish_engine, PolishEngine::Openai);
+        assert_eq!(cli.polish_model, None);
         assert!(cli.should_polish());
+    }
+
+    #[test]
+    fn accepts_local_polishing() {
+        let cli = Cli::try_parse_from(["hear", "message.wav", "--polish-engine", "local"]).unwrap();
+        assert_eq!(cli.polish_engine, PolishEngine::Local);
+        assert_eq!(cli.polish_model, None);
+        assert!(cli.validate().is_ok());
     }
 
     #[test]
