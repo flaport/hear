@@ -13,7 +13,7 @@ notes are updated here before the stage is committed and pushed to `main`.
 | 1 | Complete | Centralize shared OpenAI HTTP behavior. |
 | 2 | Complete | Split OpenAI transcription and harden upload preparation. |
 | 3 | Complete | Split transcript polishing by responsibility. |
-| 4 | Pending | Introduce options-based public library APIs. |
+| 4 | Complete | Introduce options-based public library APIs. |
 | 5 | Pending | Split microphone capture, processing, and WAV output. |
 | 6 | Pending | Harden local Whisper configuration and model downloads. |
 | 7 | Pending | Add continuous CI and synchronize documentation. |
@@ -25,7 +25,7 @@ notes are updated here before the stage is committed and pushed to `main`.
 - [x] Stage 1 — Shared OpenAI transport
 - [x] Stage 2 — OpenAI transcription and uploads
 - [x] Stage 3 — Transcript polishing
-- [ ] Stage 4 — Options-based library API
+- [x] Stage 4 — Options-based library API
 - [ ] Stage 5 — Microphone recording internals
 - [ ] Stage 6 — Whisper hardening
 - [ ] Stage 7 — Continuous verification and documentation
@@ -162,7 +162,7 @@ Completed:
 
 ## Stage 4 — Options-based library API
 
-State: Pending
+State: Complete
 
 Objectives:
 
@@ -178,6 +178,23 @@ Acceptance:
 - Existing callers continue to compile unchanged.
 - New options-based entry points have Rustdoc examples or compile-checked docs.
 - Tests cover raw, ordinary polish, and custom-instruction configuration.
+
+Completed:
+
+- Added non-exhaustive `TranscriptionOptions` and `PolishOptions` types with
+  named builder methods for vocabulary, context, dictionary context, formatter
+  instructions, and optional polishing.
+- Added `transcribe_openai_with_options`, `polish_with_options`, and the
+  raw-only `transcribe_openai_raw` entry point.
+- Retained all version 0.2 functions as compatibility wrappers over the new
+  options-based implementation.
+- Updated the CLI's OpenAI path to request raw text directly rather than create
+  a `Transcript` containing two copies of the raw result.
+- Added options tests and a compile-checked Rustdoc example.
+- Ran formatting, warnings-as-errors Clippy, full-feature tests, library-only
+  tests, doctests, and Rustdoc. All 42 non-live unit tests and the doctest
+  passed; the 2 live OpenAI tests remained intentionally ignored in each
+  applicable test run.
 
 ## Stage 5 — Microphone recording internals
 

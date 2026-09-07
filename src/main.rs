@@ -71,9 +71,7 @@ fn run() -> Result<RunOutcome> {
     eprintln!("Transcribing with {}...", cli.engine);
 
     let raw_transcript = match cli.engine {
-        Engine::GptTranscribe => {
-            hear::transcribe_openai(&input, &vocabulary, false, None, None)?.raw
-        }
+        Engine::GptTranscribe => hear::transcribe_openai_raw(&input, &vocabulary)?,
         Engine::Codex => engines::codex::transcribe(&input, cli.model.as_deref(), &vocabulary)?,
         Engine::Whisper => engines::whisper::transcribe(
             &input,
