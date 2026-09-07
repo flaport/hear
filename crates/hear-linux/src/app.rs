@@ -155,10 +155,10 @@ impl App {
                             self.toggle_paste();
                         }
                     }
-                    x11rb::protocol::Event::DestroyNotify(event) => {
-                        if event.window == self.icon_window {
-                            return Ok(());
-                        }
+                    x11rb::protocol::Event::DestroyNotify(event)
+                        if event.window == self.icon_window =>
+                    {
+                        return Ok(());
                     }
                     _ => {}
                 }
