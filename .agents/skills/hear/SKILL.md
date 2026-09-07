@@ -26,8 +26,13 @@ format, and output choices.
   requires `OPENAI_API_KEY`. It uploads audio to OpenAI.
 - `hear AUDIO --engine whisper` transcribes locally. It defaults to `tiny.en`;
   `base.en`, `small.en`, `medium.en`, and `large-v3-turbo` are also supported.
-  Models download on first use. Respect a user-selected model and do not assume
-  that a larger model is worth its download and runtime cost.
+  Models download and undergo an integrity check on first use and before reuse.
+  Respect a user-selected model and do not assume that a larger model is worth
+  its download and runtime cost.
+- Whisper defaults to English. The `.en` models only support English.
+  `large-v3-turbo` accepts `--language LANGUAGE` and `--language auto`; use
+  language selection only when the user requests it or the audio language is
+  known.
 - Avoid `--engine codex` when running inside a coding agent: it launches a new
   best-effort `codex exec` session instead of a direct transcription backend.
   Use it only when the user explicitly requests that engine.

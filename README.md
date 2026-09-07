@@ -81,7 +81,7 @@ word, so `--context plain` is an escape hatch for text such as "Message
 received yesterday." `verbatim` removes a spoken directive but otherwise skips
 the formatting request. Use `--no-polish` to bypass LLM formatting entirely.
 
-Polishing uses `gpt-5.4-mini` through the OpenAI Responses API and requires
+Polishing uses `gpt-5.6-luna` through the OpenAI Responses API and requires
 `OPENAI_API_KEY`. This means transcript text is sent to OpenAI even when audio
 was transcribed locally with whisper.cpp. Use `--no-polish` for a fully local
 Whisper workflow. Use `--raw-output PATH` to keep the original transcript
@@ -114,12 +114,20 @@ Transcribe locally with whisper.cpp:
 ```sh
 hear recording.mp3 --engine whisper
 hear recording.mp3 --engine 3 --model small.en
+hear recording.mp3 --engine whisper --model large-v3-turbo --language de
+hear recording.mp3 --engine whisper --model large-v3-turbo --language auto
 ```
 
 Supported model names are `tiny.en` (the fast default), `base.en`, `small.en`,
 `medium.en`, and `large-v3-turbo`. Models download automatically on first use
 to the platform's standard user cache directory (`hear/models`). macOS builds
-enable whisper.cpp's Metal backend; Linux uses CPU inference.
+enable whisper.cpp's Metal backend; Linux uses CPU inference. Downloads are
+pinned to a specific upstream revision and checked against their expected size
+and SHA-256 digest before installation and reuse.
+
+Whisper defaults to English. The `.en` models only accept English;
+`large-v3-turbo` also accepts `--language LANGUAGE` with a language code or
+`--language auto` for automatic detection.
 
 Record from the default microphone, then press Return to transcribe:
 
@@ -152,8 +160,10 @@ transcription facility. It is intentionally best-effort.
 ## OpenAI upload behavior
 
 Supported files of at most 25 MB are uploaded directly. Other formats are
-converted with FFmpeg. Larger files produce a warning, then are compressed and
-split into 45-minute MP3 parts before sequential transcription.
+converted with FFmpeg. Files over the limit—including files whose converted
+form crosses it—produce a warning, then are compressed and split into 45-minute
+MP3 parts before sequential transcription.
+
 ## Rust library
 
 `hear` can be embedded without its microphone, CLI, or local Whisper dependencies:
@@ -172,6 +182,29 @@ let transcript = hear::transcribe_openai(
 )?;
 println!("{}", transcript.text);
 ```
+
+For new integrations, named options avoid positional configuration and support
+additional formatting instructions:
+
+```rust,no_run
+let vocabulary = vec!["Qdrant".to_owned()];
+let options = hear::TranscriptionOptions::new()
+    .vocabulary(&vocabulary)
+    .polish(
+        hear::PolishOptions::new()
+            .context(hear::FormatContext::Notes)
+            .instruction("Use short headings."),
+    );
+let transcript = hear::transcribe_openai_with_options(
+    std::path::Path::new("meeting.m4a"),
+    &options,
+)?;
+println!("{}", transcript.text);
+```
+
+Use `transcribe_openai_raw` when only the raw transcript is needed, and
+`polish_with_options` to format text that has already been transcribed. The
+older positional functions remain available for compatibility.
 
 The library reads `OPENAI_API_KEY` from the environment. Enable the default
 `cli` feature to build the full `hear` binary with recording and local Whisper.

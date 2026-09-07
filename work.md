@@ -16,7 +16,7 @@ notes are updated here before the stage is committed and pushed to `main`.
 | 4 | Complete | Introduce options-based public library APIs. |
 | 5 | Complete | Split microphone capture, processing, and WAV output. |
 | 6 | Complete | Harden local Whisper configuration and model downloads. |
-| 7 | Pending | Add continuous CI and synchronize documentation. |
+| 7 | Complete | Add continuous CI and synchronize documentation. |
 | 8 | Pending | Run final verification and reconcile the roadmap. |
 
 ## Stage checklist
@@ -28,7 +28,7 @@ notes are updated here before the stage is committed and pushed to `main`.
 - [x] Stage 4 — Options-based library API
 - [x] Stage 5 — Microphone recording internals
 - [x] Stage 6 — Whisper hardening
-- [ ] Stage 7 — Continuous verification and documentation
+- [x] Stage 7 — Continuous verification and documentation
 - [ ] Stage 8 — Final verification
 
 ## Stage 0 — Roadmap and baseline
@@ -279,7 +279,7 @@ Completed:
 
 ## Stage 7 — Continuous verification and documentation
 
-State: Pending
+State: Complete
 
 Objectives:
 
@@ -296,6 +296,22 @@ Acceptance:
   the implementation.
 - CI exercises both the default CLI build and minimal library build before a
   release tag is involved.
+
+Completed:
+
+- Added `.github/workflows/ci.yml` for pushes to `main` and pull requests.
+- CI checks formatting, warnings-as-errors Clippy, all full-feature targets,
+  minimal-library tests, doctests, and warning-free minimal-library Rustdoc.
+- Updated the README to name `gpt-5.6-luna`, describe converted-file splitting,
+  document pinned/checksummed Whisper downloads and language selection, and
+  demonstrate the options-based library API.
+- Updated the bundled `hear` skill with the final Whisper integrity and language
+  behavior.
+- Confirmed generated CLI help exposes `--language` with the documented
+  default and scope.
+- Re-ran the full local CI command set successfully: all 50 non-live unit tests
+  and the doctest passed; the 2 live OpenAI tests remained intentionally
+  ignored in each applicable test run.
 
 ## Stage 8 — Final verification
 
