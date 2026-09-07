@@ -1,0 +1,21 @@
+[package]
+name = "hear-linux"
+version = "0.1.0"
+edition = "2024"
+description = "A Linux system-tray companion for hear"
+license = "MIT"
+publish = false
+
+[dependencies]
+anyhow = "1.0"
+arboard = "3.6"
+cpal = "0.18"
+global-hotkey = "0.8"
+hound = "3.5"
+keyring = "4.2"
+rpassword = "7.5"
+tempfile = "3.23"
+tray-icon = "0.24"
+winit = { version = "0.30", default-features = false, features = ["x11", "wayland"] }
+
+[target.'cfg(not(target_os = "linux"))'.dependencies]
