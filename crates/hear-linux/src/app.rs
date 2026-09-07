@@ -16,7 +16,7 @@ use crate::transcriber;
 const ICON_SIZE: u16 = 22;
 const SYSTEM_TRAY_REQUEST_DOCK: u32 = 0;
 
-const COLOR_IDLE: u32 = 0xFF666666;
+const COLOR_IDLE: u32 = 0xFFF2F2F2;
 const COLOR_RECORDING: u32 = 0xFFCC3333;
 const COLOR_TRANSCRIBING: u32 = 0xFFCC9933;
 
@@ -188,25 +188,25 @@ impl App {
                 Ok(recorder) => {
                     self.state = State::Recording(recorder);
                     eprintln!("Recording…");
-                    let _ = self.update_icon(COLOR_RECORDING);
+                    let _ = self.update_icon();
                 }
                 Err(error) => {
                     self.state = State::Idle;
                     eprintln!("Could not record: {error:#}");
-                    let _ = self.update_icon(COLOR_IDLE);
+                    let _ = self.update_icon();
                 }
             },
             State::Recording(recorder) => match recorder.finish() {
                 Ok(recording) => {
                     eprintln!("Transcribing…");
-                    let _ = self.update_icon(COLOR_TRANSCRIBING);
+                    let _ = self.update_icon();
                     let tx = self.event_tx.clone();
                     transcriber::transcribe_async(recording, tx);
                 }
                 Err(error) => {
                     self.state = State::Idle;
                     eprintln!("Could not finish recording: {error:#}");
-                    let _ = self.update_icon(COLOR_IDLE);
+                    let _ = self.update_icon();
                 }
             },
             State::Transcribing => {
@@ -217,7 +217,7 @@ impl App {
 
     fn transcription_finished(&mut self, result: Result<String, String>) {
         self.state = State::Idle;
-        let _ = self.update_icon(COLOR_IDLE);
+        let _ = self.update_icon();
         match result {
             Ok(transcript) => match delivery::deliver(&transcript, self.paste) {
                 Ok(true) => eprintln!("Pasted."),
@@ -236,15 +236,10 @@ impl App {
         );
     }
 
-    fn update_icon(&self, color: u32) -> Result<()> {
-        self.conn.change_window_attributes(
-            self.icon_window,
-            &ChangeWindowAttributesAux::new().background_pixel(color),
-        )?;
+    fn update_icon(&self) -> Result<()> {
         self.conn
-            .clear_area(true, self.icon_window, 0, 0, ICON_SIZE, ICON_SIZE)?;
-        self.conn.flush()?;
-        Ok(())
+            .clear_area(false, self.icon_window, 0, 0, ICON_SIZE, ICON_SIZE)?;
+        self.draw_icon()
     }
 
     fn draw_icon(&self) -> Result<()> {
@@ -254,38 +249,70 @@ impl App {
             State::Transcribing => COLOR_TRANSCRIBING,
         };
         let gc = self.conn.generate_id()?;
-        // Fill entire window with opaque background first — dwm's bar
-        // uses a low-alpha background pixel that picom makes transparent.
         self.conn.create_gc(
             gc,
             self.icon_window,
-            &CreateGCAux::new().foreground(0xFF222222),
+            &CreateGCAux::new().foreground(color).line_width(2),
         )?;
+        // Microphone capsule.
         self.conn.poly_fill_rectangle(
             self.icon_window,
             gc,
             &[Rectangle {
-                x: 0,
-                y: 0,
-                width: ICON_SIZE,
-                height: ICON_SIZE,
+                x: 8,
+                y: 5,
+                width: 6,
+                height: 7,
             }],
         )?;
-        self.conn
-            .change_gc(gc, &ChangeGCAux::new().foreground(color))?;
-        let pad = 3;
-        let diameter = ICON_SIZE - 2 * pad;
         self.conn.poly_fill_arc(
             self.icon_window,
             gc,
-            &[Arc {
-                x: pad as i16,
-                y: pad as i16,
-                width: diameter,
-                height: diameter,
-                angle1: 0,
-                angle2: 360 * 64,
-            }],
+            &[
+                Arc {
+                    x: 8,
+                    y: 2,
+                    width: 6,
+                    height: 6,
+                    angle1: 0,
+                    angle2: 360 * 64,
+                },
+                Arc {
+                    x: 8,
+                    y: 9,
+                    width: 6,
+                    height: 6,
+                    angle1: 0,
+                    angle2: 360 * 64,
+                },
+            ],
+        )?;
+        // Pickup cradle and stand.
+        self.conn.poly_line(
+            CoordMode::ORIGIN,
+            self.icon_window,
+            gc,
+            &[
+                Point { x: 5, y: 8 },
+                Point { x: 5, y: 10 },
+                Point { x: 7, y: 13 },
+                Point { x: 9, y: 15 },
+                Point { x: 13, y: 15 },
+                Point { x: 15, y: 13 },
+                Point { x: 17, y: 10 },
+                Point { x: 17, y: 8 },
+            ],
+        )?;
+        self.conn.poly_line(
+            CoordMode::ORIGIN,
+            self.icon_window,
+            gc,
+            &[
+                Point { x: 11, y: 15 },
+                Point { x: 11, y: 19 },
+                Point { x: 8, y: 19 },
+                Point { x: 14, y: 19 },
+            ],
         )?;
         self.conn.free_gc(gc)?;
         self.conn.flush()?;
