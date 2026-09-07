@@ -1636,6 +1636,7 @@ dependencies = [
  "arboard",
  "cpal",
  "global-hotkey",
+ "gtk",
  "hound",
  "keyring",
  "rpassword",

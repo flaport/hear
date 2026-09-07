@@ -45,6 +45,7 @@ pub struct App {
 
 impl App {
     pub fn run() -> Result<()> {
+        gtk::init().context("could not initialize GTK")?;
         let event_loop = EventLoop::<AppEvent>::with_user_event()
             .build()
             .context("could not create the event loop")?;
