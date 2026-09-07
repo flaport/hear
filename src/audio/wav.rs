@@ -2,7 +2,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
-pub(super) fn write(path: &Path, samples: &[f32]) -> Result<()> {
+pub(crate) fn write(path: &Path, samples: &[f32]) -> Result<()> {
     let specification = hound::WavSpec {
         channels: 1,
         sample_rate: 16_000,

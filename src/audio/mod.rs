@@ -1,6 +1,6 @@
 mod capture;
-mod processing;
-mod wav;
+pub(crate) mod processing;
+pub(crate) mod wav;
 
 use std::path::Path;
 

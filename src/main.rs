@@ -1,5 +1,6 @@
 mod audio;
 mod cli;
+mod clip;
 mod dictionary;
 mod engines;
 mod ffmpeg;
@@ -32,6 +33,10 @@ fn main() {
 fn run() -> Result<RunOutcome> {
     let cli = Cli::parse();
     cli.validate()?;
+    if matches!(cli.command, Some(Command::Clip)) {
+        clip::run(&cli)?;
+        return Ok(RunOutcome::Completed);
+    }
     if let Some(Command::Dictionary { command }) = &cli.command {
         dictionary::run(command)?;
         return Ok(RunOutcome::Completed);

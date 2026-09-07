@@ -15,7 +15,7 @@ pub fn transcribe(recording: TempPath, proxy: EventLoopProxy<AppEvent>) {
     });
 }
 
-fn run(recording: &Path) -> anyhow::Result<String> {
+pub(crate) fn run(recording: &Path) -> anyhow::Result<String> {
     let mut command = Command::new(helper_path());
     command.arg(recording);
     if std::env::var_os("OPENAI_API_KEY").is_none()

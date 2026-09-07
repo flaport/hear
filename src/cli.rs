@@ -26,6 +26,9 @@ impl fmt::Display for Engine {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Record, transcribe, and paste in one shot (toggle with a hotkey daemon).
+    Clip,
+
     /// Manage words and names that should be transcribed consistently.
     Dictionary {
         #[command(subcommand)]
@@ -116,7 +119,19 @@ pub struct Cli {
 
 impl Cli {
     pub fn validate(&self) -> Result<()> {
-        if self.command.is_some() {
+        if matches!(self.command, Some(Command::Clip)) {
+            if self.input.is_some()
+                || self.record
+                || self.save_recording.is_some()
+                || self.output.is_some()
+                || self.raw_output.is_some()
+                || self.force
+            {
+                bail!("clip cannot be combined with input, output, or recording options");
+            }
+            return Ok(());
+        }
+        if matches!(self.command, Some(Command::Dictionary { .. })) {
             if self.input.is_some()
                 || self.record
                 || self.save_recording.is_some()

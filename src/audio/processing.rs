@@ -1,4 +1,4 @@
-pub(super) struct MonoBuffer {
+pub(crate) struct MonoBuffer {
     channels: usize,
     samples: Vec<f32>,
     frame_sum: f32,
@@ -6,7 +6,7 @@ pub(super) struct MonoBuffer {
 }
 
 impl MonoBuffer {
-    pub(super) fn new(channels: usize) -> Self {
+    pub(crate) fn new(channels: usize) -> Self {
         Self {
             channels,
             samples: Vec::new(),
@@ -15,7 +15,7 @@ impl MonoBuffer {
         }
     }
 
-    pub(super) fn extend(&mut self, samples: impl IntoIterator<Item = f32>) {
+    pub(crate) fn extend(&mut self, samples: impl IntoIterator<Item = f32>) {
         for sample in samples {
             self.frame_sum += sample;
             self.frame_samples += 1;
@@ -27,12 +27,12 @@ impl MonoBuffer {
         }
     }
 
-    pub(super) fn finish(self) -> Vec<f32> {
+    pub(crate) fn finish(self) -> Vec<f32> {
         self.samples
     }
 }
 
-pub(super) fn resample(samples: &[f32], source_rate: u32, target_rate: u32) -> Vec<f32> {
+pub(crate) fn resample(samples: &[f32], source_rate: u32, target_rate: u32) -> Vec<f32> {
     if source_rate == target_rate {
         return samples.to_vec();
     }
