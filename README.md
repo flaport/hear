@@ -143,6 +143,23 @@ transcript alone goes to stdout or the requested output file.
 Ctrl-C cancels recording without saving or transcribing and exits with status
 130. Recording requires an interactive terminal so Return can be detected.
 
+## macOS menu-bar companion
+
+The separate [`hear-macos`](crates/hear-macos) workspace crate provides a
+pure-Rust menu-bar application. Press Option-Space once to start recording and
+again to stop. It invokes a bundled `hear` helper, copies successful transcripts
+to the clipboard, and can paste them into the active application when macOS
+Accessibility access is granted.
+
+Build an ad-hoc-signed development application with:
+
+```sh
+crates/hear-macos/bundle.sh
+open dist/Hear.app
+```
+
+See the companion crate's README for Keychain setup and permission details.
+
 ## Experimental Codex engine
 
 ```sh

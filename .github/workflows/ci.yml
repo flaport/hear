@@ -21,7 +21,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install --yes clang cmake libasound2-dev pkg-config
 
       - name: Check formatting
-        run: cargo fmt --check
+        run: cargo fmt --all --check
 
       - name: Lint all targets
         run: cargo clippy --locked --all-targets -- -D warnings
@@ -39,3 +39,26 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --locked --no-deps --no-default-features
+
+  macos-companion:
+    runs-on: macos-15
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Test macOS companion
+        run: cargo test --locked -p hear-macos
+
+      - name: Lint macOS companion
+        run: cargo clippy --locked -p hear-macos --all-targets -- -D warnings
+
+      - name: Build signed application bundle
+        run: crates/hear-macos/bundle.sh
+
+      - name: Verify application bundle
+        run: |
+          plutil -lint dist/Hear.app/Contents/Info.plist
+          codesign --verify --deep --strict --verbose=2 dist/Hear.app
+          test -x dist/Hear.app/Contents/MacOS/hear-macos
+          test -x dist/Hear.app/Contents/Helpers/hear

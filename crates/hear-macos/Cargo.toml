@@ -1,0 +1,23 @@
+[package]
+name = "hear-macos"
+version = "0.1.0"
+edition = "2024"
+description = "A macOS menu-bar companion for hear"
+license = "MIT"
+publish = false
+
+[dependencies]
+anyhow = "1.0"
+arboard = "3.6"
+core-graphics = "0.25"
+cpal = "0.18"
+global-hotkey = "0.8"
+hound = "3.5"
+keyring = "4.2"
+objc2-application-services = { version = "0.3", features = ["AXUIElement"] }
+rpassword = "7.5"
+tempfile = "3.23"
+tray-icon = { version = "0.24", default-features = false }
+winit = { version = "0.30", default-features = false }
+
+[target.'cfg(not(target_os = "macos"))'.dependencies]
