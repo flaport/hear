@@ -77,14 +77,17 @@ pub(super) fn ensure(model: &Model) -> Result<PathBuf> {
             "Verifying cached Whisper model {}...",
             destination.display()
         );
-        verify_file(&destination, model).with_context(|| {
-            format!(
-                "cached Whisper model failed integrity verification: {}",
-                destination.display()
-            )
-        })?;
-        write_sidecar(&sidecar, model);
-        return Ok(destination);
+        if let Err(error) = verify_file(&destination, model) {
+            eprintln!(
+                "Cached model failed integrity verification ({}); re-downloading...",
+                error
+            );
+            let _ = fs::remove_file(&destination);
+            let _ = fs::remove_file(&sidecar);
+        } else {
+            write_sidecar(&sidecar, model);
+            return Ok(destination);
+        }
     }
 
     fs::create_dir_all(&directory).with_context(|| {
