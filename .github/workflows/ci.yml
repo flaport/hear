@@ -30,10 +30,10 @@ jobs:
         run: cargo fmt --all --check
 
       - name: Lint all targets
-        run: cargo clippy --locked --all-targets -- -D warnings
+        run: cargo clippy --locked -p hear --all-targets -- -D warnings
 
       - name: Test full CLI and library
-        run: cargo test --locked --all-targets
+        run: cargo test --locked -p hear --all-targets
 
       - name: Test minimal library
         run: cargo test --locked --no-default-features --lib
@@ -45,6 +45,37 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --locked --no-deps --no-default-features
+
+  linux-companion:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: clippy
+
+      - name: Install native build dependencies
+        run: sudo apt-get update && sudo apt-get install --yes clang cmake libasound2-dev libappindicator3-dev libgtk-3-dev pkg-config
+
+      - name: Test Linux companion
+        run: cargo test --locked -p hear-linux
+
+      - name: Lint Linux companion
+        run: cargo clippy --locked -p hear-linux --all-targets -- -D warnings
+
+      - name: Build Linux companion
+        run: cargo build --locked --release -p hear -p hear-linux
+
+      - name: Verify install script
+        run: |
+          test -x crates/hear-linux/install.sh
+          test -x target/release/hear-linux
+          test -x target/release/hear
 
   macos-companion:
     runs-on: macos-15

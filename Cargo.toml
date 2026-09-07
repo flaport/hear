@@ -42,6 +42,6 @@ lto = "thin"
 strip = true
 
 [workspace]
-members = ["crates/hear-macos"]
+members = ["crates/hear-linux", "crates/hear-macos"]
 default-members = ["."]
 resolver = "3"
