@@ -1,6 +1,6 @@
 # hear-linux
 
-`hear-linux` is a Linux-only system-tray companion for `hear`. Press Alt-Space
+`hear-linux` is a Linux-only system-tray companion for `hear`. Press Alt-Z
 to start recording, press it again to stop, and the app runs the bundled `hear`
 CLI. Successful transcripts are always copied to the clipboard and can
 optionally be pasted into the active application.
@@ -9,7 +9,7 @@ For window managers where a tray or application-managed global shortcut is not
 practical, `hear-linux oneshot` provides the same record/transcribe/deliver
 workflow for an external hotkey daemon. Invoke it once to begin recording and a
 second time to stop; the original process then transcribes, pastes, and exits.
-If Alt-Space is already reserved, the tray app remains usable from its menu and
+If Alt-Z is already reserved, the tray app remains usable from its menu and
 prints a warning instead of exiting during startup.
 
 The crate intentionally remains separate from the reusable `hear` library.

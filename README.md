@@ -163,7 +163,7 @@ See the companion crate's README for Keychain setup and permission details.
 ## Linux system-tray companion
 
 The separate [`hear-linux`](crates/hear-linux) workspace crate provides a
-system-tray application for Linux desktops. Press Alt-Space once to start
+system-tray application for Linux desktops. Press Alt-Z once to start
 recording and again to stop. It invokes a sibling `hear` binary, copies
 successful transcripts to the clipboard, and can paste them into the active
 application. Clipboard persistence uses `xclip` (X11) or `wl-copy` (Wayland);

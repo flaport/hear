@@ -5,6 +5,7 @@ use anyhow::{Context, Result, bail};
 use global_hotkey::hotkey::{Code, HotKey, Modifiers};
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 use x11rb::connection::Connection;
+use x11rb::wrapper::ConnectionExt as _;
 use x11rb::protocol::xproto::*;
 use x11rb::rust_connection::RustConnection;
 
@@ -15,9 +16,9 @@ use crate::transcriber;
 const ICON_SIZE: u16 = 22;
 const SYSTEM_TRAY_REQUEST_DOCK: u32 = 0;
 
-const COLOR_IDLE: u32 = 0x666666;
-const COLOR_RECORDING: u32 = 0xCC3333;
-const COLOR_TRANSCRIBING: u32 = 0xCC9933;
+const COLOR_IDLE: u32 = 0xFF666666;
+const COLOR_RECORDING: u32 = 0xFFCC3333;
+const COLOR_TRANSCRIBING: u32 = 0xFFCC9933;
 
 pub enum AppEvent {
     TranscriptionFinished(Result<String, String>),
@@ -31,7 +32,6 @@ enum State {
 
 pub struct App {
     conn: RustConnection,
-    screen_num: usize,
     icon_window: Window,
     state: State,
     paste: bool,
@@ -47,35 +47,79 @@ impl App {
             .context("could not connect to X11 display")?;
         let screen = &conn.setup().roots[screen_num];
 
+        let tray_visual = find_tray_visual(&conn, screen);
+        eprintln!("debug: root depth={}, root visual=0x{:x}", screen.root_depth, screen.root_visual);
+        eprintln!("debug: tray_visual={:?}", tray_visual.map(|(d, v)| (d, format!("0x{v:x}"))));
+        let (depth, visual, colormap) = match tray_visual {
+            Some((d, v)) => {
+                let cmap = conn.generate_id()?;
+                conn.create_colormap(ColormapAlloc::NONE, cmap, screen.root, v)?;
+                (d, v, Some(cmap))
+            }
+            None => (screen.root_depth, screen.root_visual, None),
+        };
+        eprintln!("debug: using depth={}, visual=0x{:x}, has_colormap={}", depth, visual, colormap.is_some());
+
         let icon_window = conn.generate_id()?;
+        let mut aux = CreateWindowAux::new()
+            .background_pixel(COLOR_IDLE)
+            .override_redirect(1)
+            .event_mask(
+                EventMask::EXPOSURE
+                    | EventMask::BUTTON_PRESS
+                    | EventMask::STRUCTURE_NOTIFY,
+            );
+        if let Some(cmap) = colormap {
+            aux = aux.colormap(cmap).border_pixel(0);
+        }
         conn.create_window(
-            screen.root_depth,
+            depth,
             icon_window,
             screen.root,
             0, 0,
             ICON_SIZE, ICON_SIZE,
             0,
             WindowClass::INPUT_OUTPUT,
-            screen.root_visual,
-            &CreateWindowAux::new()
-                .background_pixel(COLOR_IDLE)
-                .override_redirect(1)
-                .event_mask(
-                    EventMask::EXPOSURE
-                        | EventMask::BUTTON_PRESS
-                        | EventMask::STRUCTURE_NOTIFY,
-                ),
+            visual,
+            &aux,
+        )?;
+
+        let xembed_info_atom = conn
+            .intern_atom(false, b"_XEMBED_INFO")?
+            .reply()
+            .context("could not intern _XEMBED_INFO")?
+            .atom;
+        conn.change_property32(
+            PropMode::REPLACE,
+            icon_window,
+            xembed_info_atom,
+            xembed_info_atom,
+            &[1, 1],
+        )?;
+        conn.change_property8(
+            PropMode::REPLACE,
+            icon_window,
+            AtomEnum::WM_CLASS,
+            AtomEnum::STRING,
+            b"hear-linux\0Hear-linux",
+        )?;
+        conn.change_property8(
+            PropMode::REPLACE,
+            icon_window,
+            AtomEnum::WM_NAME,
+            AtomEnum::STRING,
+            b"hear-linux",
         )?;
         conn.flush()?;
 
         request_dock(&conn, screen, icon_window)?;
 
-        let hotkey = HotKey::new(Some(Modifiers::ALT), Code::Space);
+        let hotkey = HotKey::new(Some(Modifiers::ALT), Code::KeyZ);
         let manager = match GlobalHotKeyManager::new() {
             Ok(manager) => match manager.register(hotkey) {
                 Ok(()) => Some(manager),
                 Err(error) => {
-                    eprintln!("Could not register Alt-Space: {error}. Use the tray icon instead.");
+                    eprintln!("Could not register Alt-Z: {error}. Use the tray icon instead.");
                     None
                 }
             },
@@ -88,7 +132,6 @@ impl App {
         let (event_tx, event_rx) = mpsc::channel();
         let mut app = Self {
             conn,
-            screen_num,
             icon_window,
             state: State::Idle,
             paste: true,
@@ -105,7 +148,10 @@ impl App {
         loop {
             while let Some(event) = self.conn.poll_for_event()? {
                 match event {
-                    x11rb::protocol::Event::Expose(_) => self.draw_icon()?,
+                    x11rb::protocol::Event::Expose(_) => {
+                        eprintln!("debug: Expose event received");
+                        self.draw_icon()?;
+                    }
                     x11rb::protocol::Event::ButtonPress(event) => {
                         if event.detail == 1 {
                             self.toggle_recording();
@@ -195,12 +241,11 @@ impl App {
     }
 
     fn update_icon(&self, color: u32) -> Result<()> {
-        let screen = &self.conn.setup().roots[self.screen_num];
         self.conn.change_window_attributes(
             self.icon_window,
             &ChangeWindowAttributesAux::new().background_pixel(color),
         )?;
-        self.conn.clear_area(true, self.icon_window, 0, 0, screen.width_in_pixels, screen.height_in_pixels)?;
+        self.conn.clear_area(true, self.icon_window, 0, 0, ICON_SIZE, ICON_SIZE)?;
         self.conn.flush()?;
         Ok(())
     }
@@ -212,11 +257,19 @@ impl App {
             State::Transcribing => COLOR_TRANSCRIBING,
         };
         let gc = self.conn.generate_id()?;
+        // Fill entire window with opaque background first — dwm's bar
+        // uses a low-alpha background pixel that picom makes transparent.
         self.conn.create_gc(
             gc,
             self.icon_window,
-            &CreateGCAux::new().foreground(color),
+            &CreateGCAux::new().foreground(0xFF222222),
         )?;
+        self.conn.poly_fill_rectangle(
+            self.icon_window,
+            gc,
+            &[Rectangle { x: 0, y: 0, width: ICON_SIZE, height: ICON_SIZE }],
+        )?;
+        self.conn.change_gc(gc, &ChangeGCAux::new().foreground(color))?;
         let pad = 3;
         let diameter = ICON_SIZE - 2 * pad;
         self.conn.poly_fill_arc(
@@ -237,12 +290,49 @@ impl App {
     }
 }
 
+fn find_tray_visual(conn: &RustConnection, screen: &Screen) -> Option<(u8, Visualid)> {
+    let tray_atom = conn
+        .intern_atom(false, b"_NET_SYSTEM_TRAY_S0")
+        .ok()?
+        .reply()
+        .ok()?
+        .atom;
+    let visual_atom = conn
+        .intern_atom(false, b"_NET_SYSTEM_TRAY_VISUAL")
+        .ok()?
+        .reply()
+        .ok()?
+        .atom;
+    let tray_owner = conn
+        .get_selection_owner(tray_atom)
+        .ok()?
+        .reply()
+        .ok()?
+        .owner;
+    if tray_owner == x11rb::NONE {
+        return None;
+    }
+    let prop = conn
+        .get_property(false, tray_owner, visual_atom, AtomEnum::VISUALID, 0, 1)
+        .ok()?
+        .reply()
+        .ok()?;
+    let visual_id = prop.value32()?.next()?;
+    for depth_info in &screen.allowed_depths {
+        for vis in &depth_info.visuals {
+            if vis.visual_id == visual_id {
+                return Some((depth_info.depth, visual_id));
+            }
+        }
+    }
+    None
+}
+
 fn request_dock(
     conn: &RustConnection,
     screen: &Screen,
     icon_window: Window,
 ) -> Result<()> {
-    let tray_atom_name = format!("_NET_SYSTEM_TRAY_S{}", screen.root_visual);
     let tray_atom = conn
         .intern_atom(false, b"_NET_SYSTEM_TRAY_S0")?
         .reply()
@@ -259,12 +349,14 @@ fn request_dock(
         .reply()
         .context("could not find the system tray")?
         .owner;
+    eprintln!("debug: tray_owner=0x{:x}", tray_owner);
     if tray_owner == x11rb::NONE {
         bail!(
-            "no system tray is running (no owner for {tray_atom_name}). \
+            "no system tray is running (no owner for _NET_SYSTEM_TRAY_S0). \
              Make sure your window manager has a systray enabled."
         );
     }
+    eprintln!("debug: sending dock request for window 0x{:x}", icon_window);
 
     conn.send_event(
         false,
