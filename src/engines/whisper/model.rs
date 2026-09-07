@@ -67,13 +67,23 @@ pub(super) fn ensure(model: &Model) -> Result<PathBuf> {
     let base = BaseDirs::new().context("could not determine the platform cache directory")?;
     let directory = base.cache_dir().join("hear").join("models");
     let destination = directory.join(model.filename);
+    let sidecar = directory.join(format!("{}.sha256", model.filename));
+    if destination.is_file() && sidecar_matches(&sidecar, model) {
+        return Ok(destination);
+    }
+
     if destination.is_file() {
+        eprintln!(
+            "Verifying cached Whisper model {}...",
+            destination.display()
+        );
         verify_file(&destination, model).with_context(|| {
             format!(
-                "cached Whisper model failed integrity verification: {}; remove it and try again",
+                "cached Whisper model failed integrity verification: {}",
                 destination.display()
             )
         })?;
+        write_sidecar(&sidecar, model);
         return Ok(destination);
     }
 
@@ -110,7 +120,18 @@ pub(super) fn ensure(model: &Model) -> Result<PathBuf> {
         .persist(&destination)
         .map_err(|error| error.error)
         .with_context(|| format!("could not install Whisper model: {}", destination.display()))?;
+    write_sidecar(&sidecar, model);
     Ok(destination)
+}
+
+fn sidecar_matches(sidecar: &Path, model: &Model) -> bool {
+    fs::read_to_string(sidecar)
+        .map(|content| content.trim() == model.sha256)
+        .unwrap_or(false)
+}
+
+fn write_sidecar(sidecar: &Path, model: &Model) {
+    let _ = fs::write(sidecar, format!("{}\n", model.sha256));
 }
 
 fn verify_file(path: &Path, model: &Model) -> Result<()> {
