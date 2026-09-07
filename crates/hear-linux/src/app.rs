@@ -59,6 +59,7 @@ impl App {
             screen.root_visual,
             &CreateWindowAux::new()
                 .background_pixel(COLOR_IDLE)
+                .override_redirect(1)
                 .event_mask(
                     EventMask::EXPOSURE
                         | EventMask::BUTTON_PRESS
