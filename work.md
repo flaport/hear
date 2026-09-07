@@ -17,7 +17,7 @@ notes are updated here before the stage is committed and pushed to `main`.
 | 5 | Complete | Split microphone capture, processing, and WAV output. |
 | 6 | Complete | Harden local Whisper configuration and model downloads. |
 | 7 | Complete | Add continuous CI and synchronize documentation. |
-| 8 | Pending | Run final verification and reconcile the roadmap. |
+| 8 | Complete | Run final verification and reconcile the roadmap. |
 
 ## Stage checklist
 
@@ -29,7 +29,7 @@ notes are updated here before the stage is committed and pushed to `main`.
 - [x] Stage 5 — Microphone recording internals
 - [x] Stage 6 — Whisper hardening
 - [x] Stage 7 — Continuous verification and documentation
-- [ ] Stage 8 — Final verification
+- [x] Stage 8 — Final verification
 
 ## Stage 0 — Roadmap and baseline
 
@@ -315,7 +315,7 @@ Completed:
 
 ## Stage 8 — Final verification
 
-State: Pending
+State: Complete
 
 Objectives:
 
@@ -330,3 +330,33 @@ Acceptance:
   tests, and Rustdoc pass.
 - `work.md` accurately describes the delivered state and remaining external
   verification.
+
+Completed:
+
+- Confirmed the refactored source tree has focused directories for OpenAI
+  transcription, formatting, microphone audio, and local Whisper without the
+  former duplicate single-file module implementations.
+- Confirmed `hear 0.2.5` and generated CLI help match the README, including
+  engine names, contexts, outputs, and Whisper language selection.
+- Ran `cargo fmt --check`.
+- Ran `cargo clippy --locked --all-targets -- -D warnings`.
+- Ran `cargo test --locked --all-targets`: 50 non-live tests passed and 2 live
+  OpenAI tests were intentionally ignored.
+- Ran `cargo test --locked --no-default-features --lib`: 20 non-live tests
+  passed and 2 live OpenAI tests were intentionally ignored.
+- Ran the compile-checked doctest and warning-free minimal-library Rustdoc.
+- Built the optimized full CLI and minimal library with the locked dependency
+  graph.
+- Confirmed GitHub Actions accepted the new CI workflow run for the Stage 7
+  commit.
+
+External verification intentionally deferred:
+
+- The ignored live transcription and formatting tests require an API key and
+  make billable OpenAI requests.
+- Microphone capture and Ctrl-C behavior require an interactive audio device.
+- End-to-end Whisper model downloads and inference require large model artifacts
+  and representative audio; catalog hashes and download hashing are covered by
+  unit tests.
+- Cross-platform release artifacts remain covered by the tag-triggered release
+  workflow rather than this local macOS verification.
