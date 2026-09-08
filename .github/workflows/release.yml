@@ -58,7 +58,7 @@ jobs:
 
       - name: Build Linux release binaries
         if: runner.os == 'Linux'
-        run: cargo build --locked --release -p hear -p hear-linux -p hear-local-polish --target "${{ matrix.target }}"
+        run: cargo build --locked --release -p hear -p hear-linux --target "${{ matrix.target }}"
 
       - name: Build macOS CLI and application bundle
         if: runner.os == 'macOS'
@@ -74,10 +74,10 @@ jobs:
         run: |
           mkdir -p artifacts
           tar -C "target/${{ matrix.target }}/release" -czf \
-            "artifacts/hear-${GITHUB_REF_NAME}-${{ matrix.target }}.tar.gz" hear hear-local-polish
+            "artifacts/hear-${GITHUB_REF_NAME}-${{ matrix.target }}.tar.gz" hear
           if [[ "${{ runner.os }}" == "Linux" ]]; then
             tar -C "target/${{ matrix.target }}/release" -czf \
-              "artifacts/hear-app-${GITHUB_REF_NAME}-${{ matrix.target }}.tar.gz" hear-app hear hear-local-polish
+              "artifacts/hear-app-${GITHUB_REF_NAME}-${{ matrix.target }}.tar.gz" hear-app hear
           else
             ditto -c -k --sequesterRsrc --keepParent dist/Hear.app \
               "artifacts/Hear-${GITHUB_REF_NAME}-${{ matrix.target }}.zip"

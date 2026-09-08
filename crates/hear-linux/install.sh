@@ -5,7 +5,7 @@ repository_root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 prefix="${PREFIX:-$HOME/.local}"
 
 GGML_NATIVE="${GGML_NATIVE:-OFF}" cargo build --manifest-path "$repository_root/Cargo.toml" --locked --release \
-    -p hear -p hear-linux -p hear-local-polish
+    -p hear -p hear-linux
 
 mkdir -p "$prefix/bin"
 install_binary() {
@@ -18,7 +18,8 @@ install_binary() {
 
 install_binary "$repository_root/target/release/hear" "$prefix/bin/hear"
 install_binary "$repository_root/target/release/hear-app" "$prefix/bin/hear-app"
-install_binary "$repository_root/target/release/hear-local-polish" "$prefix/bin/hear-local-polish"
+# Remove the helper installed by older versions after both replacements succeed.
+rm -f "$prefix/bin/hear-local-polish"
 
 desktop_dir="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
 mkdir -p "$desktop_dir"
@@ -32,5 +33,5 @@ Terminal=false
 Categories=Utility;Audio;
 DESKTOP
 
-echo "Installed hear, hear-app, and hear-local-polish to $prefix/bin"
+echo "Installed hear and hear-app to $prefix/bin"
 echo "Desktop entry written to $desktop_dir/hear.desktop"

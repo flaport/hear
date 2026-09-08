@@ -128,7 +128,7 @@ pub fn polish_with_options(transcript: &str, options: &PolishOptions<'_>) -> Res
     )
 }
 
-/// Polish an existing transcript locally with the `hear-local-polish` helper.
+/// Polish an existing transcript locally with the built-in llama.cpp runtime.
 ///
 /// The recommended Qwen model is downloaded and cached on first use unless a
 /// model name or GGUF path was supplied through [`PolishOptions::model`].

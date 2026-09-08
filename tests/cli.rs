@@ -25,7 +25,8 @@ fn run_mock_codex(reply: &str, extra: &[&str]) -> (std::process::Output, tempfil
             .env_remove("OPENAI_API_KEY"),
         None,
         &hear_core::process::Cancellation::default(),
-        std::time::Duration::from_secs(10),
+        // First-use Metal initialization can compile its embedded shaders.
+        std::time::Duration::from_secs(60),
         false,
     )
     .unwrap();
@@ -77,4 +78,29 @@ fn hard_link_output_is_rejected_before_transcription() {
     assert_eq!(fs::read(audio).unwrap(), b"preserve audio");
     let value: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
     assert_eq!(value["phase"], "validation");
+}
+
+#[test]
+fn local_polishing_failure_retains_raw_transcript() {
+    let model = tempfile::Builder::new().suffix(".gguf").tempfile().unwrap();
+    fs::write(model.path(), b"invalid model").unwrap();
+    let (output, _) = run_mock_codex(
+        r#"{"text":"zzHearRegression","error":null}"#,
+        &[
+            "--polish-engine",
+            "local",
+            "--polish-model",
+            model.path().to_str().unwrap(),
+        ],
+    );
+    assert!(!output.status.success());
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["phase"], "polishing", "{value}");
+    assert_eq!(value["raw"], "zzHearRegression");
+    assert!(
+        value["message"]
+            .as_str()
+            .unwrap()
+            .contains("could not load local model")
+    );
 }

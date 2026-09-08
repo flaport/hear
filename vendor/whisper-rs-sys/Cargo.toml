@@ -1,0 +1,18 @@
+[package]
+name = "whisper-rs-sys"
+version = "0.15.0"
+edition = "2021"
+rust-version = "1.88"
+links = "whisper"
+license = "Unlicense"
+description = "Hear's Whisper bindings using the GGML built by llama-cpp-sys-2"
+
+[features]
+metal = ["llama-cpp-sys-2/metal"]
+
+[dependencies]
+llama-cpp-sys-2 = { version = "=0.1.156", default-features = false }
+
+[build-dependencies]
+bindgen = "0.72"
+cmake = "0.1"

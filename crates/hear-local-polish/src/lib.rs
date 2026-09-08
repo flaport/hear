@@ -3,6 +3,7 @@
 mod model;
 
 use std::num::NonZeroU32;
+use std::sync::OnceLock;
 
 use anyhow::{Context, Result, bail};
 use llama_cpp_2::context::params::LlamaContextParams;
@@ -39,10 +40,9 @@ struct Polished {
 /// accepted.
 pub fn polish(instructions: &str, input: &str, requested_model: Option<&str>) -> Result<String> {
     let model_path = model::resolve(requested_model)?;
-    send_logs_to_tracing(LogOptions::default().with_logs_enabled(false));
-    let backend = LlamaBackend::init().context("could not initialize local model inference")?;
+    let backend = backend()?;
     let model_params = local_model_params();
-    let model = LlamaModel::load_from_file(&backend, &model_path, &model_params)
+    let model = LlamaModel::load_from_file(backend, &model_path, &model_params)
         .with_context(|| format!("could not load local model {}", model_path.display()))?;
     let template = model
         .chat_template(None)
@@ -56,8 +56,21 @@ pub fn polish(instructions: &str, input: &str, requested_model: Option<&str>) ->
     let prompt = model
         .apply_chat_template(&template, &messages, true)
         .context("could not apply the local model chat template")?;
-    let output = generate(&backend, &model, &prompt)?;
+    let output = generate(backend, &model, &prompt)?;
     parse_output(&output)
+}
+
+// Keep the shared native runtime alive across calls. Reinitializing per request
+// rejects concurrent callers and tears down GGML state used by other engines.
+fn backend() -> Result<&'static LlamaBackend> {
+    static BACKEND: OnceLock<Result<LlamaBackend, String>> = OnceLock::new();
+    BACKEND
+        .get_or_init(|| {
+            send_logs_to_tracing(LogOptions::default().with_logs_enabled(false));
+            LlamaBackend::init().map_err(|error| error.to_string())
+        })
+        .as_ref()
+        .map_err(|error| anyhow::anyhow!("could not initialize local model inference: {error}"))
 }
 
 fn local_model_params() -> LlamaModelParams {
@@ -159,6 +172,17 @@ fn parse_output(output: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shares_backend_across_repeated_and_concurrent_calls() {
+        let first = backend().unwrap();
+        assert!(std::ptr::eq(first, backend().unwrap()));
+        std::thread::scope(|scope| {
+            for _ in 0..4 {
+                scope.spawn(|| assert!(std::ptr::eq(first, backend().unwrap())));
+            }
+        });
+    }
 
     #[test]
     fn parses_structured_output() {

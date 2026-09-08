@@ -21,7 +21,7 @@ transcription engines and formatting remain owned by `hear`.
 Build both binaries:
 
 ```sh
-GGML_NATIVE=OFF cargo build -p hear -p hear-linux -p hear-local-polish
+GGML_NATIVE=OFF cargo build -p hear -p hear-linux
 ```
 
 Install the companion and helper binary:

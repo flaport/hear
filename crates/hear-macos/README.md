@@ -14,7 +14,7 @@ transcription engines and formatting remain owned by `hear`.
 Build both binaries:
 
 ```sh
-cargo build -p hear -p hear-macos -p hear-local-polish
+cargo build -p hear -p hear-macos
 ```
 
 Create an ad-hoc-signed application bundle:

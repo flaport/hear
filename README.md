@@ -24,7 +24,7 @@ tagged builds.
 To build locally instead:
 
 ```sh
-cargo build --release -p hear -p hear-local-polish
+cargo build --release -p hear
 ```
 
 The resulting binary is `target/release/hear`. FFmpeg is required when input
@@ -36,7 +36,7 @@ headers for microphone recording. On Debian or Ubuntu:
 
 ```sh
 sudo apt install build-essential cmake clang libasound2-dev pkg-config ffmpeg
-GGML_NATIVE=OFF cargo build --release -p hear -p hear-local-polish
+GGML_NATIVE=OFF cargo build --release -p hear
 ```
 
 ## Usage
@@ -92,8 +92,8 @@ Polishing uses `gpt-5.6-luna` by default through the OpenAI Responses API and
 requires `OPENAI_API_KEY`. This means transcript text is sent to OpenAI even
 when audio was transcribed locally with whisper.cpp.
 
-Use `--polish-engine local` to polish with the bundled `hear-local-polish`
-helper and Qwen3.5 instead. The default 2B Q4_K_M model is 1.4 GB; the smaller
+Use `--polish-engine local` to polish with the built-in llama.cpp runtime
+and Qwen3.5 instead. The default 2B Q4_K_M model is 1.4 GB; the smaller
 0.8B model is 580 MB. Each GGUF is downloaded, checksum-verified, and stored in
 the platform's standard `hear/models` cache on first use. Local polishing runs
 on the CPU on Linux and Intel macOS, and uses Metal acceleration on Apple
@@ -108,10 +108,12 @@ hear recording.m4a --polish-engine local --polish-model qwen3.5-0.8b
 hear recording.m4a --polish-engine local --polish-model /models/custom.gguf
 ```
 
-The helper is a separate process because whisper.cpp and llama.cpp each vendor
-GGML; isolating them prevents duplicate native symbols in the main binary. Its
-`llama-cpp-2` dependency is pinned exactly so GGUF compatibility changes are
-intentional upgrades.
+The `hear` executable contains both Whisper transcription and local polishing;
+no separate polishing executable is needed. Both engines link against one static
+GGML build provided by the exactly pinned `llama-cpp-sys-2` dependency. The
+patched Whisper binding in `vendor/whisper-rs-sys` uses that build and its headers.
+See [native build notes](vendor/whisper-rs-sys/README.md) before upgrading either
+native dependency.
 
 Use `--no-polish` to skip formatting entirely. Use `--raw-output PATH` to keep
 the original transcript alongside the formatted result.
@@ -279,17 +281,20 @@ older positional functions remain available for compatibility.
 
 The library reads `OPENAI_API_KEY` from the environment. The default `cli`
 feature builds the full `hear` binary with recording and local Whisper and
-includes the `local-polish` client feature. That feature exposes
-`polish_local_with_options`, which locates `hear-local-polish` beside the
-current executable or on `PATH`.
+includes the `local-polish` feature. That feature exposes
+`polish_local_with_options`, which runs local inference in the calling process.
+The `hear-local-polish` workspace crate is an internal Rust library, not an
+installed executable. Local inference keeps its backend initialized across calls;
+models and inference contexts are released after each request.
 
 ## Shared workflow and failure recovery
 
 `hear-core` owns typed engine/model configuration, path identity checks, bounded
 microphone capture, subprocess management, and the app/helper response protocol.
 The platform apps own their UI, credential storage, clipboard, and focus checks.
-Whisper and local polishing retain separate native processes to avoid their
-vendored GGML symbol conflict.
+The CLI runs Whisper and local polishing using the same native GGML runtime.
+Desktop apps remain separate executables and run the CLI as a managed child
+process, retaining their cancellation and deadline handling.
 
 Built-in cached models are checked against the catalog size and SHA-256 before
 each load. Old checksum sidecars are ignored: matching timestamps alone cannot

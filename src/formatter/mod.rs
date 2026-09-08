@@ -3,12 +3,6 @@ mod request;
 mod response;
 
 use anyhow::Result;
-#[cfg(feature = "local-polish")]
-use anyhow::{Context, bail};
-#[cfg(feature = "local-polish")]
-use std::path::PathBuf;
-#[cfg(feature = "local-polish")]
-use std::process::Command;
 
 use crate::FormatContext;
 use crate::openai_transport;
@@ -88,53 +82,7 @@ pub(crate) fn polish_local(
         dictionary_context,
         custom_instruction,
     );
-    run_local_helper(request::INSTRUCTIONS, &input, model)
-}
-
-#[cfg(feature = "local-polish")]
-fn run_local_helper(instructions: &str, input: &str, model: Option<&str>) -> Result<String> {
-    let request = serde_json::json!({
-        "instructions": instructions,
-        "input": input,
-        "model": model,
-    });
-    let output = hear_core::process::run(
-        &mut Command::new(local_helper_path()),
-        Some(request.to_string().into_bytes()),
-        &hear_core::process::Cancellation::default(),
-        std::time::Duration::from_secs(3600),
-        false,
-    )?;
-    if !output.status.success() {
-        bail!(
-            "local polishing helper failed with {}: {}",
-            output.status,
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-    let transcript = String::from_utf8(output.stdout)
-        .context("local polishing helper returned text that was not UTF-8")?;
-    let transcript = transcript.trim();
-    if transcript.is_empty() {
-        bail!("local polishing helper returned an empty transcript");
-    }
-    Ok(transcript.to_owned())
-}
-
-#[cfg(feature = "local-polish")]
-fn local_helper_path() -> PathBuf {
-    if let Some(path) = std::env::var_os("HEAR_LOCAL_POLISH_PATH") {
-        return path.into();
-    }
-    if let Ok(executable) = std::env::current_exe()
-        && let Some(directory) = executable.parent()
-    {
-        let sibling = directory.join("hear-local-polish");
-        if sibling.is_file() {
-            return sibling;
-        }
-    }
-    PathBuf::from("hear-local-polish")
+    hear_local_polish::polish(request::INSTRUCTIONS, &input, model)
 }
 
 #[cfg(test)]
