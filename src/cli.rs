@@ -155,11 +155,6 @@ impl Cli {
         !self.no_polish
     }
 
-    pub fn format_context(&self) -> Option<FormatContext> {
-        self.context
-            .filter(|context| *context != FormatContext::Auto)
-    }
-
     pub fn hear_config(&self) -> hear_core::HearConfig {
         hear_core::HearConfig {
             engine: self.engine,
@@ -175,12 +170,6 @@ impl Cli {
             force: self.force,
         }
     }
-    pub fn resolved_engine(&self) -> Engine {
-        self.hear_config().resolved_engine()
-    }
-    pub fn resolved_polish_engine(&self) -> PolishEngine {
-        self.hear_config().resolved_polish_engine()
-    }
 }
 
 #[cfg(test)]
@@ -191,9 +180,12 @@ mod tests {
     fn defaults_to_gpt_transcribe() {
         let cli = Cli::try_parse_from(["hear", "message.mp3"]).unwrap();
         assert_eq!(cli.engine, None);
-        assert_eq!(cli.resolved_engine(), Engine::GptTranscribe);
+        assert_eq!(cli.hear_config().resolved_engine(), Engine::GptTranscribe);
         assert_eq!(cli.polish_engine, None);
-        assert_eq!(cli.resolved_polish_engine(), PolishEngine::Openai);
+        assert_eq!(
+            cli.hear_config().resolved_polish_engine(),
+            PolishEngine::Openai
+        );
         assert_eq!(cli.polish_model, None);
         assert!(cli.should_polish());
     }
@@ -251,18 +243,24 @@ mod tests {
     #[test]
     fn infers_engines_from_models_and_language() {
         let whisper = Cli::try_parse_from(["hear", "message.wav", "--model", "small.en"]).unwrap();
-        assert_eq!(whisper.resolved_engine(), Engine::Whisper);
+        assert_eq!(whisper.hear_config().resolved_engine(), Engine::Whisper);
 
         let multilingual =
             Cli::try_parse_from(["hear", "message.wav", "--language", "nl"]).unwrap();
-        assert_eq!(multilingual.resolved_engine(), Engine::Whisper);
+        assert_eq!(
+            multilingual.hear_config().resolved_engine(),
+            Engine::Whisper
+        );
 
         let codex = Cli::try_parse_from(["hear", "message.wav", "--model", "gpt-5.4"]).unwrap();
-        assert_eq!(codex.resolved_engine(), Engine::Codex);
+        assert_eq!(codex.hear_config().resolved_engine(), Engine::Codex);
 
         let local =
             Cli::try_parse_from(["hear", "message.wav", "--polish-model", "qwen3.5-0.8b"]).unwrap();
-        assert_eq!(local.resolved_polish_engine(), PolishEngine::Local);
+        assert_eq!(
+            local.hear_config().resolved_polish_engine(),
+            PolishEngine::Local
+        );
 
         let gguf = Cli::try_parse_from([
             "hear",
@@ -271,7 +269,10 @@ mod tests {
             "/models/custom.GGUF",
         ])
         .unwrap();
-        assert_eq!(gguf.resolved_polish_engine(), PolishEngine::Local);
+        assert_eq!(
+            gguf.hear_config().resolved_polish_engine(),
+            PolishEngine::Local
+        );
     }
 
     #[test]
@@ -289,8 +290,11 @@ mod tests {
             "qwen3.5-0.8b",
         ])
         .unwrap();
-        assert_eq!(cli.resolved_engine(), Engine::Codex);
-        assert_eq!(cli.resolved_polish_engine(), PolishEngine::Openai);
+        assert_eq!(cli.hear_config().resolved_engine(), Engine::Codex);
+        assert_eq!(
+            cli.hear_config().resolved_polish_engine(),
+            PolishEngine::Openai
+        );
     }
 
     #[test]
@@ -316,7 +320,7 @@ mod tests {
         ])
         .unwrap();
         assert!(whisper.validate().is_ok());
-        assert_eq!(whisper.resolved_engine(), Engine::Whisper);
+        assert_eq!(whisper.hear_config().resolved_engine(), Engine::Whisper);
     }
 
     #[test]
@@ -378,7 +382,7 @@ mod tests {
     #[test]
     fn explicit_auto_context_uses_automatic_directive_detection() {
         let cli = Cli::try_parse_from(["hear", "message.wav", "--context", "auto"]).unwrap();
-        assert_eq!(cli.format_context(), None);
+        assert_eq!(cli.hear_config().context, FormatContext::Auto);
     }
 
     #[test]

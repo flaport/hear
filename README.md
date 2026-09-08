@@ -287,12 +287,50 @@ The `hear-local-polish` workspace crate is an internal Rust library, not an
 installed executable. Local inference keeps its backend initialized across calls;
 models and inference contexts are released after each request.
 
+## Complete library workflow
+
+The `workflow` feature exposes the same engines, dictionary corrections, polishing,
+and file-output behavior as the CLI, without enabling argument parsing or terminal
+signal handlers. `Workflow::run` returns both raw and formatted text; failures
+include their stage and any text already produced. Supply an `OpenAiClient` for
+explicit credentials and transport settings, or let OpenAI operations read the
+environment. Dictionary loading is explicit for library callers.
+
+```rust,no_run
+use hear::{Engine, HearConfig, PolishEngine, Workflow, dictionary::Dictionary};
+
+let workflow = Workflow::new(HearConfig {
+    engine: Some(Engine::Whisper),
+    polish_engine: Some(PolishEngine::Local),
+    ..HearConfig::default()
+})
+.dictionary(Dictionary::load()?);
+
+let transcript = workflow.run(std::path::Path::new("meeting.wav"))?;
+println!("{}", transcript.text);
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+For a dependency on a source checkout, use `default-features = false` and
+`features = ["workflow"]`. The native Whisper dependencies are linked directly;
+consumer projects do not need workspace patches. `tests/check-library-consumer.sh`
+checks this from a separate Cargo project.
+
+`Recorder::start`, `check`, `stop`, and `finish` expose microphone capture without
+requiring a terminal. Pass the completed recording's path to `Workflow::run`.
+The `capture` feature also exposes this API without the native inference engines.
+`Dictionary` supports loading, adding, listing, removing, and saving entries.
+`write_transcript` exposes the same file overwrite policy used by the workflow.
+The CLI owns terminal interaction, signal handling, argument parsing, and display.
+
 ## Shared workflow and failure recovery
 
 `hear-core` owns typed engine/model configuration, path identity checks, bounded
 microphone capture, subprocess management, and the app/helper response protocol.
 The platform apps own their UI, credential storage, clipboard, and focus checks.
-The CLI runs Whisper and local polishing using the same native GGML runtime.
+`hear::Workflow` owns engine dispatch, dictionary corrections, polishing, output
+files, and partial-result errors. Whisper and local polishing use the same native
+GGML runtime.
 Desktop apps remain separate executables and run the CLI as a managed child
 process, retaining their cancellation and deadline handling.
 

@@ -1,7 +1,6 @@
 use anyhow::{Result, bail};
 use std::{
     io::{self, IsTerminal},
-    path::Path,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -9,12 +8,12 @@ use std::{
     },
     time::Duration,
 };
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug)]
 pub enum RecordingOutcome {
-    Completed,
+    Completed(tempfile::TempPath),
     Cancelled,
 }
-pub fn record(destination: &Path, force: bool) -> Result<RecordingOutcome> {
+pub fn record() -> Result<RecordingOutcome> {
     if !io::stdin().is_terminal() {
         bail!("recording requires an interactive terminal");
     }
@@ -25,7 +24,7 @@ pub fn record(destination: &Path, force: bool) -> Result<RecordingOutcome> {
             std::process::exit(130);
         }
     })?;
-    let recorder = hear_core::capture::Recorder::start()?;
+    let recorder = hear::Recorder::start()?;
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
         let mut line = String::new();
@@ -46,8 +45,7 @@ pub fn record(destination: &Path, force: bool) -> Result<RecordingOutcome> {
         }
     }
     let recording = recorder.finish()?;
-    hear_core::files::copy(&recording, destination, force)?;
     // Subsequent Ctrl-C must terminate transcription instead of setting an unused flag.
     cancelled.store(true, Ordering::SeqCst);
-    Ok(RecordingOutcome::Completed)
+    Ok(RecordingOutcome::Completed(recording))
 }

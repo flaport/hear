@@ -37,6 +37,14 @@ jobs:
       - name: Test full CLI and library
         run: cargo test --locked -p hear -p hear-core --all-targets
 
+      - name: Test complete library without CLI features
+        run: |
+          cargo test --locked --no-default-features --features workflow --lib --test workflow
+          cargo test --locked --no-default-features --features workflow --doc
+
+      - name: Check independent library consumer
+        run: tests/check-library-consumer.sh
+
       - name: Test minimal library
         run: cargo test --locked --no-default-features --lib
 

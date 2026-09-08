@@ -1,4 +1,4 @@
-//! Reusable OpenAI transcription and transcript-polishing API.
+//! Audio transcription, polishing, recording, and dictionary APIs.
 
 mod context;
 mod ffmpeg;
@@ -255,3 +255,20 @@ mod tests {
         );
     }
 }
+
+#[cfg(feature = "workflow")]
+pub mod dictionary;
+#[cfg(feature = "workflow")]
+mod engines;
+#[cfg(feature = "workflow")]
+mod output;
+#[cfg(feature = "workflow")]
+mod workflow;
+
+#[cfg(feature = "capture")]
+pub use hear_core::capture::{PendingRecording, Recorder};
+pub use hear_core::{Engine, HearConfig, PolishEngine};
+#[cfg(feature = "workflow")]
+pub use output::write_transcript;
+#[cfg(feature = "workflow")]
+pub use workflow::{Stage, Workflow, WorkflowError, WorkflowEvent};

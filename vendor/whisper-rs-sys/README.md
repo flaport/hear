@@ -6,7 +6,9 @@ one GGML implementation. It does not rename symbols or suppress linker errors.
 
 ## Pinned sources
 
-- Rust API: `whisper-rs` 0.16.0, pinned in the root manifest.
+- Rust API: `whisper-rs` 0.16.0, pinned in the root manifest and vendored
+  in `../whisper-rs` so its direct dependency on this crate survives embedding
+  Hear in another Cargo workspace.
 - Whisper sources: unmodified `whisper.cpp` 1.8.3 files from the crates.io
   `whisper-rs-sys` 0.15.0 package (archive SHA-256:
   `6986c0fe081241d391f09b9a071fbcbb59720c3563628c3c829057cf69f2a56f`). Only the build/include/source subset needed by

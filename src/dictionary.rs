@@ -8,8 +8,6 @@ use directories::BaseDirs;
 use regex::{Captures, Regex};
 use serde::{Deserialize, Serialize};
 
-use crate::cli::DictionaryCommand;
-
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct Dictionary {
     #[serde(default)]
@@ -17,41 +15,12 @@ pub struct Dictionary {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-struct Entry {
-    term: String,
+pub struct Entry {
+    pub term: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    aliases: Vec<String>,
+    pub aliases: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    sounds_like: Option<String>,
-}
-
-pub fn run(command: &DictionaryCommand) -> Result<()> {
-    match command {
-        DictionaryCommand::Add {
-            term,
-            aliases,
-            sounds_like,
-        } => {
-            let mut dictionary = Dictionary::load()?;
-            let updated = dictionary.add(term, aliases, sounds_like.as_deref())?;
-            dictionary.save()?;
-            println!(
-                "{} dictionary entry: {}",
-                if updated { "Updated" } else { "Added" },
-                term.trim()
-            );
-        }
-        DictionaryCommand::List => Dictionary::load()?.print(),
-        DictionaryCommand::Remove { term } => {
-            let mut dictionary = Dictionary::load()?;
-            if !dictionary.remove(term) {
-                bail!("dictionary entry not found: {}", term.trim());
-            }
-            dictionary.save()?;
-            println!("Removed dictionary entry: {}", term.trim());
-        }
-    }
-    Ok(())
+    pub sounds_like: Option<String>,
 }
 
 impl Dictionary {
@@ -60,7 +29,7 @@ impl Dictionary {
         Self::load_from(&path)
     }
 
-    fn load_from(path: &Path) -> Result<Self> {
+    pub fn load_from(path: &Path) -> Result<Self> {
         if !path.exists() {
             return Ok(Self::default());
         }
@@ -72,12 +41,13 @@ impl Dictionary {
         Ok(dictionary)
     }
 
-    fn save(&self) -> Result<()> {
+    pub fn save(&self) -> Result<()> {
         let path = dictionary_path()?;
         self.save_to(&path)
     }
 
-    fn save_to(&self, path: &Path) -> Result<()> {
+    pub fn save_to(&self, path: &Path) -> Result<()> {
+        self.validate()?;
         let directory = path
             .parent()
             .context("dictionary path has no parent directory")?;
@@ -181,7 +151,12 @@ impl Dictionary {
             .into_owned())
     }
 
-    fn add(&mut self, term: &str, aliases: &[String], sounds_like: Option<&str>) -> Result<bool> {
+    pub fn add(
+        &mut self,
+        term: &str,
+        aliases: &[String],
+        sounds_like: Option<&str>,
+    ) -> Result<bool> {
         let mut candidate = self.clone();
         let updated = candidate.add_validated(term, aliases, sounds_like)?;
         candidate.validate()?;
@@ -238,7 +213,7 @@ impl Dictionary {
         Ok(existing_index.is_some())
     }
 
-    fn remove(&mut self, term: &str) -> bool {
+    pub fn remove(&mut self, term: &str) -> bool {
         let Some(index) = self
             .entries
             .iter()
@@ -250,7 +225,7 @@ impl Dictionary {
         true
     }
 
-    fn validate(&self) -> Result<()> {
+    pub fn validate(&self) -> Result<()> {
         let mut values = HashSet::new();
         for entry in &self.entries {
             clean_value(&entry.term, "term")?;
@@ -270,20 +245,9 @@ impl Dictionary {
         Ok(())
     }
 
-    fn print(&self) {
-        if self.entries.is_empty() {
-            println!("Dictionary is empty.");
-            return;
-        }
-        for entry in &self.entries {
-            println!("{}", entry.term);
-            if !entry.aliases.is_empty() {
-                println!("  aliases: {}", entry.aliases.join(", "));
-            }
-            if let Some(sounds_like) = &entry.sounds_like {
-                println!("  sounds like: {sounds_like}");
-            }
-        }
+    /// Saved dictionary entries.
+    pub fn entries(&self) -> &[Entry] {
+        &self.entries
     }
 }
 

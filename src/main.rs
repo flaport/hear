@@ -1,52 +1,39 @@
 mod audio;
 mod cli;
-mod dictionary;
-mod engines;
-mod ffmpeg;
-mod output;
+mod dictionary_cli;
 
-use std::path::Path;
+use std::io::{self, Write};
 
-use anyhow::{Context, Result, bail};
 use clap::Parser;
+use hear::{Stage, Transcript, Workflow, WorkflowError, WorkflowEvent, dictionary::Dictionary};
 use hear_core::helper::{Recording, Response};
 
-use crate::cli::{Cli, Command, Engine, PolishEngine};
+use crate::cli::{Cli, Command};
 
-enum RunOutcome {
-    Completed,
-    Cancelled,
-}
-
-#[derive(Default)]
-struct Progress {
-    phase: &'static str,
-    raw: Option<String>,
-    text: Option<String>,
+struct Completed {
+    transcript: Transcript,
     recording: Option<Recording>,
 }
+
 fn main() {
     let cli = Cli::parse();
-    let mut progress = Progress {
-        phase: "validation",
-        ..Progress::default()
-    };
-    let result = run(&cli, &mut progress);
-    if cli.json {
+    let result =
+        run(&cli).and_then(|completed| completed.map(|job| deliver(&cli, job)).transpose());
+    if cli.json && !matches!(&result, Ok(Some(_))) {
         let response = match &result {
-            Ok(RunOutcome::Completed) => Response::Success {
-                raw: progress.raw.clone().unwrap_or_default(),
-                text: progress.text.clone().unwrap_or_default(),
+            Ok(Some(transcript)) => Response::Success {
+                raw: transcript.raw.clone(),
+                text: transcript.text.clone(),
             },
-            Ok(RunOutcome::Cancelled) => Response::Failure {
+            Ok(None) => Response::Failure {
                 phase: "recording".into(),
                 message: "cancelled".into(),
                 raw: None,
             },
             Err(error) => Response::Failure {
-                phase: progress.phase.into(),
-                message: format!("{error:#}"),
-                raw: progress.raw.clone(),
+                phase: error.stage.as_str().into(),
+                message: error.to_string(),
+                raw: error.raw.clone(),
             },
         };
         println!(
@@ -55,141 +42,113 @@ fn main() {
         );
     }
     let exit = match result {
-        Ok(RunOutcome::Completed) => 0,
-        Ok(RunOutcome::Cancelled) => 130,
+        Ok(Some(_)) => 0,
+        Ok(None) => 130,
         Err(error) => {
-            eprintln!("error: {error:#}");
+            eprintln!("error: {error}");
             if !cli.json
-                && let Some(raw) = &progress.raw
+                && let Some(raw) = &error.raw
             {
                 eprintln!("Raw transcript retained below:\n{raw}");
             }
             1
         }
     };
-    if (exit == 0 || exit == 130)
-        && let Some(recording) = progress.recording.take()
-    {
-        recording.delivered();
-    }
-    if exit == 1
-        && let (Some(recording), Some(raw)) = (&mut progress.recording, &progress.raw)
-    {
-        recording.remember_transcript(raw);
-    }
-    // Drop before process::exit so failed recordings are preserved and reported.
-    drop(progress);
     if exit != 0 {
         std::process::exit(exit);
     }
 }
-fn run(cli: &Cli, progress: &mut Progress) -> Result<RunOutcome> {
-    cli.validate()?;
+
+fn run(cli: &Cli) -> Result<Option<Completed>, WorkflowError> {
+    let validation = |error| WorkflowError::new(Stage::Validation, error);
+    cli.validate().map_err(validation)?;
     if let Some(Command::Dictionary { command }) = &cli.command {
-        dictionary::run(command)?;
-        return Ok(RunOutcome::Completed);
+        dictionary_cli::run(command).map_err(validation)?;
+        return Ok(Some(Completed {
+            transcript: Transcript {
+                raw: String::new(),
+                text: String::new(),
+            },
+            recording: None,
+        }));
     }
-    output::preflight(cli)?;
-
-    let dictionary = dictionary::Dictionary::load()?;
-    let vocabulary = dictionary.canonical_terms();
-
-    progress.phase = "recording";
-    let input = if cli.record {
-        let path = match &cli.save_recording {
-            Some(path) => path.clone(),
-            None => {
-                let tempfile = tempfile::Builder::new()
-                    .prefix("hear-recording-")
-                    .suffix(".wav")
-                    .tempfile()
-                    .context("could not create a temporary recording file")?;
-                let path = tempfile.path().to_path_buf();
-                progress.recording = Some(Recording::new(tempfile.into_temp_path()));
-                path
+    let config = cli.hear_config();
+    let engine = config.resolved_engine();
+    let workflow = Workflow::new(config)
+        .dictionary(Dictionary::load().map_err(validation)?)
+        .progress(move |event| match event {
+            WorkflowEvent::Stage(Stage::Transcription) => {
+                eprintln!("Transcribing with {engine}...")
             }
-        };
-
-        if audio::record(&path, cli.force || progress.recording.is_some())?
-            == audio::RecordingOutcome::Cancelled
-        {
-            return Ok(RunOutcome::Cancelled);
-        }
-        path
-    } else {
-        cli.input
-            .clone()
-            .expect("CLI validation guarantees an input path")
-    };
-
-    validate_input(&input)?;
-    progress.phase = "transcription";
-    let engine = cli.resolved_engine();
-    eprintln!("Transcribing with {engine}...");
-
-    let raw_transcript = match engine {
-        Engine::GptTranscribe => hear::OpenAiClient::builder(
-            std::env::var("OPENAI_API_KEY").context("OPENAI_API_KEY is not set")?,
-        )
-        .progress(|event| match event {
-            hear::ProgressEvent::Uploading { part, total } if total > 1 => {
-                eprintln!("Uploading part {part} of {total}...")
+            WorkflowEvent::Stage(Stage::Polishing) => eprintln!("Polishing transcript..."),
+            WorkflowEvent::Progress(hear::ProgressEvent::Uploading { part, total })
+                if total > 1 =>
+            {
+                eprintln!("Uploading part {part} of {total}...");
             }
-            hear::ProgressEvent::Message(message) => eprintln!("{message}"),
+            WorkflowEvent::Progress(hear::ProgressEvent::Message(message)) => {
+                eprintln!("{message}")
+            }
             _ => {}
-        })
-        .build()?
-        .transcribe_raw(&input, &vocabulary)?,
-        Engine::Codex => engines::codex::transcribe(&input, cli.model.as_deref(), &vocabulary)?,
-        Engine::Whisper => engines::whisper::transcribe(
-            &input,
-            cli.model.as_deref().unwrap_or("tiny.en"),
-            cli.language.as_deref().unwrap_or("en"),
-            &vocabulary,
-        )?,
-    };
-    let raw_transcript = dictionary.correct_aliases(&raw_transcript)?;
-
-    progress.raw = Some(raw_transcript.clone());
-    progress.phase = "output";
-    if let Some(path) = cli.raw_output.as_deref() {
-        output::write_transcript(&raw_transcript, Some(path), cli.force)?;
-    }
-    let transcript = if cli.should_polish() {
-        progress.phase = "polishing";
-        eprintln!("Polishing transcript...");
-        let dictionary_context = dictionary.formatter_context();
-        let mut options = hear::PolishOptions::new();
-        if let Some(model) = cli.polish_model.as_deref() {
-            options = options.model(model);
-        }
-        if let Some(context) = cli.format_context() {
-            options = options.context(context);
-        }
-        if let Some(dictionary_context) = dictionary_context.as_deref() {
-            options = options.dictionary_context(dictionary_context);
-        }
-        match cli.resolved_polish_engine() {
-            PolishEngine::Openai => hear::polish_with_options(&raw_transcript, &options)?,
-            PolishEngine::Local => hear::polish_local_with_options(&raw_transcript, &options)?,
+        });
+    workflow.preflight(cli.input.as_deref())?;
+    let mut recording = if cli.record {
+        match audio::record().map_err(|error| WorkflowError::new(Stage::Recording, error))? {
+            audio::RecordingOutcome::Completed(path) => Some(Recording::new(path)),
+            audio::RecordingOutcome::Cancelled => return Ok(None),
         }
     } else {
-        raw_transcript
+        None
     };
-    progress.phase = "output";
-    if !cli.json || cli.output.is_some() {
-        output::write_transcript(&transcript, cli.output.as_deref(), cli.force)?;
+    let input = recording
+        .as_ref()
+        .map(Recording::path)
+        .or(cli.input.as_deref())
+        .expect("validated audio input");
+    match workflow.run(input) {
+        Ok(transcript) => Ok(Some(Completed {
+            transcript,
+            recording,
+        })),
+        Err(error) => {
+            if let (Some(recording), Some(raw)) = (&mut recording, &error.raw) {
+                recording.remember_transcript(raw);
+            }
+            Err(error)
+        }
     }
-    progress.text = Some(transcript);
-    Ok(RunOutcome::Completed)
 }
 
-fn validate_input(path: &Path) -> Result<()> {
-    if !path.exists() {
-        bail!("audio file does not exist: {}", path.display());
+// Delivery belongs to the terminal adapter. Keep the recording until stdout
+// accepts the result, including the JSON protocol used by subprocess callers.
+fn deliver(cli: &Cli, mut completed: Completed) -> Result<Transcript, WorkflowError> {
+    let transcript = completed.transcript;
+    if let Some(recording) = &mut completed.recording {
+        recording.remember_transcript(&transcript.raw);
     }
-    if !path.is_file() {
-        bail!("audio input is not a file: {}", path.display());
+    let write = if cli.json {
+        let response = Response::Success {
+            raw: transcript.raw.clone(),
+            text: transcript.text.clone(),
+        };
+        writeln!(
+            io::stdout().lock(),
+            "{}",
+            serde_json::to_string(&response).expect("serializable response")
+        )
+    } else if cli.output.is_none() && cli.command.is_none() {
+        writeln!(io::stdout().lock(), "{}", transcript.text.trim())
+    } else {
+        Ok(())
+    };
+    write.map_err(|source| {
+        let mut error = WorkflowError::new(Stage::Output, source);
+        error.raw = Some(transcript.raw.clone());
+        error.text = Some(transcript.text.clone());
+        error
+    })?;
+    if let Some(recording) = completed.recording {
+        recording.delivered();
     }
-    Ok(())
+    Ok(transcript)
 }
