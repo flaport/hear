@@ -48,6 +48,11 @@ hear recording.mp3 --engine gpt-transcribe
 hear recording.mp3 --engine 1
 ```
 
+The engine flags are optional. A Whisper `--model` or `--language` selects
+Whisper automatically; another transcription model selects Codex. A built-in
+local `--polish-model` or GGUF path selects local polishing. Explicit
+`--engine` and `--polish-engine` values override this inference.
+
 Write plain text to a file with `-o`. Existing files are rejected unless
 `--force` is present.
 
@@ -97,6 +102,7 @@ quantization. For example:
 
 ```sh
 hear recording.m4a --engine whisper --polish-engine local
+hear recording.m4a --model small.en --polish-model qwen3.5-0.8b
 hear recording.m4a --polish-engine local --polish-model qwen3.5-0.8b
 hear recording.m4a --polish-engine local --polish-model /models/custom.gguf
 ```

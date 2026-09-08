@@ -80,9 +80,7 @@ mod tests {
     #[test]
     fn configured_models_precede_the_recording_path() {
         let hear = HearConfig {
-            engine: "whisper".to_owned(),
             model: "small.en".to_owned(),
-            polish_engine: "local".to_owned(),
             polish_model: "qwen3.5-0.8b".to_owned(),
             ..HearConfig::default()
         };
@@ -91,12 +89,8 @@ mod tests {
         assert_eq!(
             arguments,
             [
-                "--engine",
-                "whisper",
                 "--model",
                 "small.en",
-                "--polish-engine",
-                "local",
                 "--polish-model",
                 "qwen3.5-0.8b",
                 "--context",

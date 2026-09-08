@@ -36,10 +36,10 @@ impl Default for Config {
 impl Default for HearConfig {
     fn default() -> Self {
         Self {
-            engine: "gpt-transcribe".to_owned(),
+            engine: String::new(),
             model: String::new(),
             language: String::new(),
-            polish_engine: "openai".to_owned(),
+            polish_engine: String::new(),
             polish_model: String::new(),
             context: "auto".to_owned(),
             polish: true,
@@ -68,7 +68,8 @@ impl Config {
 
 impl HearConfig {
     pub fn arguments(&self) -> Vec<String> {
-        let mut arguments = vec!["--engine".to_owned(), self.engine.clone()];
+        let mut arguments = Vec::new();
+        push_value(&mut arguments, "--engine", &self.engine);
         push_value(&mut arguments, "--model", &self.model);
         push_value(&mut arguments, "--language", &self.language);
         if self.polish {
@@ -82,14 +83,22 @@ impl HearConfig {
     }
 
     pub fn requires_openai(&self) -> bool {
-        self.engine == "gpt-transcribe" || (self.polish && self.polish_engine == "openai")
+        let transcription = self.engine == "gpt-transcribe"
+            || (self.engine.is_empty() && self.model.is_empty() && self.language.is_empty());
+        let polishing = self.polish
+            && (self.polish_engine == "openai"
+                || (self.polish_engine.is_empty() && !is_local_polish_model(&self.polish_model)));
+        transcription || polishing
     }
 
     fn validate(&self) -> Result<()> {
-        if !matches!(self.engine.as_str(), "gpt-transcribe" | "codex" | "whisper") {
+        if !matches!(
+            self.engine.as_str(),
+            "" | "gpt-transcribe" | "codex" | "whisper"
+        ) {
             bail!("unknown hear engine: {:?}", self.engine);
         }
-        if !matches!(self.polish_engine.as_str(), "openai" | "local") {
+        if !matches!(self.polish_engine.as_str(), "" | "openai" | "local") {
             bail!("unknown hear polishing engine: {:?}", self.polish_engine);
         }
         if !matches!(
@@ -101,11 +110,20 @@ impl HearConfig {
         if !self.model.trim().is_empty() && self.engine == "gpt-transcribe" {
             bail!("hear.model is only valid with the codex or whisper engine");
         }
-        if !self.language.trim().is_empty() && self.engine != "whisper" {
+        if !self.language.trim().is_empty() && !self.engine.is_empty() && self.engine != "whisper" {
             bail!("hear.language is only valid with the whisper engine");
         }
         Ok(())
     }
+}
+
+fn is_local_polish_model(model: &str) -> bool {
+    matches!(
+        model,
+        "qwen3.5-2b" | "qwen3.5-2b-q4_k_m" | "qwen3.5-0.8b" | "qwen3.5-0.8b-q4_k_m"
+    ) || std::path::Path::new(model)
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("gguf"))
 }
 
 fn push_value(arguments: &mut Vec<String>, flag: &str, value: &str) {
@@ -122,6 +140,13 @@ fn config_path() -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn defaults_omit_engine_flags_and_retain_openai_behavior() {
+        let hear = HearConfig::default();
+        assert_eq!(hear.arguments(), ["--context", "auto"]);
+        assert!(hear.requires_openai());
+    }
 
     #[test]
     fn parses_local_model_configuration() {
@@ -150,21 +175,15 @@ polish = true
     #[test]
     fn builds_helper_arguments() {
         let hear = HearConfig {
-            engine: "whisper".to_owned(),
             model: "tiny.en".to_owned(),
-            polish_engine: "local".to_owned(),
             polish_model: "qwen3.5-0.8b".to_owned(),
             ..HearConfig::default()
         };
         assert_eq!(
             hear.arguments(),
             [
-                "--engine",
-                "whisper",
                 "--model",
                 "tiny.en",
-                "--polish-engine",
-                "local",
                 "--polish-model",
                 "qwen3.5-0.8b",
                 "--context",
@@ -176,11 +195,11 @@ polish = true
     #[test]
     fn no_polish_omits_polishing_options() {
         let hear = HearConfig {
-            engine: "whisper".to_owned(),
+            model: "tiny.en".to_owned(),
             polish: false,
             ..HearConfig::default()
         };
-        assert_eq!(hear.arguments(), ["--engine", "whisper", "--no-polish"]);
+        assert_eq!(hear.arguments(), ["--model", "tiny.en", "--no-polish"]);
         assert!(!hear.requires_openai());
     }
 }

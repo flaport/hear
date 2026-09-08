@@ -83,9 +83,9 @@ pub struct Cli {
     #[arg(long, value_name = "PATH", requires = "record")]
     pub save_recording: Option<PathBuf>,
 
-    /// Transcription engine (names or aliases: 1, 2, 3).
-    #[arg(long, value_enum, default_value_t = Engine::GptTranscribe)]
-    pub engine: Engine,
+    /// Engine; inferred from --model or --language, otherwise gpt-transcribe.
+    #[arg(long, value_enum)]
+    pub engine: Option<Engine>,
 
     /// Model for the selected transcription engine.
     ///
@@ -94,9 +94,9 @@ pub struct Cli {
     #[arg(long, value_name = "MODEL")]
     pub model: Option<String>,
 
-    /// Engine used to polish the transcript.
-    #[arg(long, value_enum, default_value_t = PolishEngine::Openai)]
-    pub polish_engine: PolishEngine,
+    /// Polishing engine; inferred from --polish-model, otherwise OpenAI.
+    #[arg(long, value_enum)]
+    pub polish_engine: Option<PolishEngine>,
 
     /// Model for the selected polishing engine.
     ///
@@ -142,9 +142,9 @@ impl Cli {
             if self.input.is_some()
                 || self.record
                 || self.save_recording.is_some()
-                || self.engine != Engine::GptTranscribe
+                || self.engine.is_some()
                 || self.model.is_some()
-                || self.polish_engine != PolishEngine::Openai
+                || self.polish_engine.is_some()
                 || self.polish_model.is_some()
                 || self.language.is_some()
                 || self.output.is_some()
@@ -161,10 +161,10 @@ impl Cli {
         if !self.record && self.input.is_none() {
             bail!("provide an audio file or use --record");
         }
-        if self.engine == Engine::GptTranscribe && self.model.is_some() {
+        if self.engine == Some(Engine::GptTranscribe) && self.model.is_some() {
             bail!("--model is only valid with --engine codex or --engine whisper");
         }
-        if self.language.is_some() && self.engine != Engine::Whisper {
+        if self.language.is_some() && self.engine.is_some_and(|engine| engine != Engine::Whisper) {
             bail!("--language is only valid with --engine whisper");
         }
         if self.raw_output.is_some() && !self.should_polish() {
@@ -206,6 +206,48 @@ impl Cli {
         self.context
             .filter(|context| *context != FormatContext::Auto)
     }
+
+    pub fn resolved_engine(&self) -> Engine {
+        self.engine.unwrap_or_else(|| {
+            if self.language.is_some() || self.model.as_deref().is_some_and(is_whisper_model) {
+                Engine::Whisper
+            } else if self.model.is_some() {
+                Engine::Codex
+            } else {
+                Engine::GptTranscribe
+            }
+        })
+    }
+
+    pub fn resolved_polish_engine(&self) -> PolishEngine {
+        self.polish_engine.unwrap_or_else(|| {
+            if self
+                .polish_model
+                .as_deref()
+                .is_some_and(is_local_polish_model)
+            {
+                PolishEngine::Local
+            } else {
+                PolishEngine::Openai
+            }
+        })
+    }
+}
+
+fn is_whisper_model(model: &str) -> bool {
+    matches!(
+        model,
+        "tiny.en" | "base.en" | "small.en" | "medium.en" | "large-v3-turbo"
+    )
+}
+
+fn is_local_polish_model(model: &str) -> bool {
+    matches!(
+        model,
+        "qwen3.5-2b" | "qwen3.5-2b-q4_k_m" | "qwen3.5-0.8b" | "qwen3.5-0.8b-q4_k_m"
+    ) || PathBuf::from(model)
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("gguf"))
 }
 
 fn paths_refer_to_same_file(left: &PathBuf, right: &PathBuf) -> bool {
@@ -223,8 +265,10 @@ mod tests {
     #[test]
     fn defaults_to_gpt_transcribe() {
         let cli = Cli::try_parse_from(["hear", "message.mp3"]).unwrap();
-        assert_eq!(cli.engine, Engine::GptTranscribe);
-        assert_eq!(cli.polish_engine, PolishEngine::Openai);
+        assert_eq!(cli.engine, None);
+        assert_eq!(cli.resolved_engine(), Engine::GptTranscribe);
+        assert_eq!(cli.polish_engine, None);
+        assert_eq!(cli.resolved_polish_engine(), PolishEngine::Openai);
         assert_eq!(cli.polish_model, None);
         assert!(cli.should_polish());
     }
@@ -232,7 +276,7 @@ mod tests {
     #[test]
     fn accepts_local_polishing() {
         let cli = Cli::try_parse_from(["hear", "message.wav", "--polish-engine", "local"]).unwrap();
-        assert_eq!(cli.polish_engine, PolishEngine::Local);
+        assert_eq!(cli.polish_engine, Some(PolishEngine::Local));
         assert_eq!(cli.polish_model, None);
         assert!(cli.validate().is_ok());
     }
@@ -262,30 +306,84 @@ mod tests {
     #[test]
     fn accepts_numeric_engine_aliases() {
         let cli = Cli::try_parse_from(["hear", "message.wav", "--engine", "3"]).unwrap();
-        assert_eq!(cli.engine, Engine::Whisper);
+        assert_eq!(cli.engine, Some(Engine::Whisper));
     }
 
     #[test]
     fn rejects_model_for_gpt_transcribe() {
-        let cli = Cli::try_parse_from(["hear", "message.wav", "--model", "anything"]).unwrap();
+        let cli = Cli::try_parse_from([
+            "hear",
+            "message.wav",
+            "--engine",
+            "gpt-transcribe",
+            "--model",
+            "anything",
+        ])
+        .unwrap();
         assert!(cli.validate().is_err());
     }
 
     #[test]
-    fn language_is_only_valid_for_whisper() {
-        let openai = Cli::try_parse_from(["hear", "message.wav", "--language", "de"]).unwrap();
-        assert!(openai.validate().is_err());
+    fn infers_engines_from_models_and_language() {
+        let whisper = Cli::try_parse_from(["hear", "message.wav", "--model", "small.en"]).unwrap();
+        assert_eq!(whisper.resolved_engine(), Engine::Whisper);
 
-        let whisper = Cli::try_parse_from([
+        let multilingual =
+            Cli::try_parse_from(["hear", "message.wav", "--language", "nl"]).unwrap();
+        assert_eq!(multilingual.resolved_engine(), Engine::Whisper);
+
+        let codex = Cli::try_parse_from(["hear", "message.wav", "--model", "gpt-5.4"]).unwrap();
+        assert_eq!(codex.resolved_engine(), Engine::Codex);
+
+        let local =
+            Cli::try_parse_from(["hear", "message.wav", "--polish-model", "qwen3.5-0.8b"]).unwrap();
+        assert_eq!(local.resolved_polish_engine(), PolishEngine::Local);
+
+        let gguf = Cli::try_parse_from([
+            "hear",
+            "message.wav",
+            "--polish-model",
+            "/models/custom.GGUF",
+        ])
+        .unwrap();
+        assert_eq!(gguf.resolved_polish_engine(), PolishEngine::Local);
+    }
+
+    #[test]
+    fn explicit_engines_override_model_inference() {
+        let cli = Cli::try_parse_from([
             "hear",
             "message.wav",
             "--engine",
-            "whisper",
+            "codex",
+            "--model",
+            "tiny.en",
+            "--polish-engine",
+            "openai",
+            "--polish-model",
+            "qwen3.5-0.8b",
+        ])
+        .unwrap();
+        assert_eq!(cli.resolved_engine(), Engine::Codex);
+        assert_eq!(cli.resolved_polish_engine(), PolishEngine::Openai);
+    }
+
+    #[test]
+    fn language_is_only_valid_for_whisper() {
+        let openai = Cli::try_parse_from([
+            "hear",
+            "message.wav",
+            "--engine",
+            "gpt-transcribe",
             "--language",
             "de",
         ])
         .unwrap();
+        assert!(openai.validate().is_err());
+
+        let whisper = Cli::try_parse_from(["hear", "message.wav", "--language", "de"]).unwrap();
         assert!(whisper.validate().is_ok());
+        assert_eq!(whisper.resolved_engine(), Engine::Whisper);
     }
 
     #[test]

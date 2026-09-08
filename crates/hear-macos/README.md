@@ -55,24 +55,23 @@ equivalent to:
 paste_automatically = true
 
 [hear]
-engine = "gpt-transcribe"
+engine = ""
 model = ""
 language = ""
-polish_engine = "openai"
+polish_engine = ""
 polish_model = ""
 context = "auto"
 polish = true
 ```
 
-An empty model selects the CLI default. For a fully local configuration using
-the smaller polishing model:
+Empty engine values let the CLI infer an engine from its model options, and an
+empty model selects the CLI default. For a fully local configuration using the
+smaller polishing model:
 
 ```toml
 [hear]
-engine = "whisper"
 model = "tiny.en"
 language = "en"
-polish_engine = "local"
 polish_model = "qwen3.5-0.8b"
 context = "auto"
 polish = true

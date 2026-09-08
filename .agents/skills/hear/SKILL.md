@@ -22,7 +22,7 @@ format, and output choices.
 
 ## Choose an engine
 
-- `hear AUDIO` or `hear AUDIO --engine gpt-transcribe` is the default and
+- `hear AUDIO` or `hear AUDIO --engine gpt-transcribe` uses the default and
   requires `OPENAI_API_KEY`. It uploads audio to OpenAI.
 - `hear AUDIO --engine whisper` transcribes locally. It defaults to `tiny.en`;
   `base.en`, `small.en`, `medium.en`, and `large-v3-turbo` are also supported.
@@ -43,6 +43,11 @@ transcription. For fully local formatting, combine `--engine whisper` with
 model or omit it for the default `qwen3.5-2b`. Use `--no-polish` for a fully
 local unformatted transcript. Check whether `OPENAI_API_KEY` exists without
 printing its value before selecting a workflow that needs it.
+
+The engine flags are optional. A known Whisper `--model` or `--language`
+implies Whisper, any other transcription model implies Codex, and a built-in
+local `--polish-model` or GGUF path implies local polishing. Explicit engine
+flags override inference.
 
 ## Control the result
 

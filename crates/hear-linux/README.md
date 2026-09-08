@@ -56,10 +56,10 @@ default = "ctrl+v"
 Alacritty = "alt+v"
 
 [hear]
-engine = "gpt-transcribe"
+engine = ""
 model = ""
 language = ""
-polish_engine = "openai"
+polish_engine = ""
 polish_model = ""
 context = "auto"
 polish = true
@@ -69,13 +69,13 @@ raw_output = ""
 force = false
 ```
 
-Empty paths disable the corresponding file output, while an empty `model`,
-`language`, or `polish_model` selects the CLI default. For example, local Dutch
-transcription without polishing can be selected with:
+Empty engine values let the CLI infer an engine from its model options. Empty
+paths disable the corresponding file output, while an empty `model`, `language`,
+or `polish_model` selects the CLI default. For example, local Dutch transcription
+without polishing can be selected with:
 
 ```toml
 [hear]
-engine = "whisper"
 model = "large-v3-turbo"
 language = "nl"
 polish = false
@@ -85,10 +85,8 @@ To keep both the audio and transcript on the machine, select local polishing:
 
 ```toml
 [hear]
-engine = "whisper"
 model = "large-v3-turbo"
 language = "nl"
-polish_engine = "local"
 polish_model = "qwen3.5-0.8b"
 ```
 

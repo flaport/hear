@@ -68,9 +68,10 @@ fn run() -> Result<RunOutcome> {
     };
 
     validate_input(&input)?;
-    eprintln!("Transcribing with {}...", cli.engine);
+    let engine = cli.resolved_engine();
+    eprintln!("Transcribing with {engine}...");
 
-    let raw_transcript = match cli.engine {
+    let raw_transcript = match engine {
         Engine::GptTranscribe => hear::transcribe_openai_raw(&input, &vocabulary)?,
         Engine::Codex => engines::codex::transcribe(&input, cli.model.as_deref(), &vocabulary)?,
         Engine::Whisper => engines::whisper::transcribe(
@@ -98,7 +99,7 @@ fn run() -> Result<RunOutcome> {
         if let Some(dictionary_context) = dictionary_context.as_deref() {
             options = options.dictionary_context(dictionary_context);
         }
-        match cli.polish_engine {
+        match cli.resolved_polish_engine() {
             PolishEngine::Openai => hear::polish_with_options(&raw_transcript, &options)?,
             PolishEngine::Local => hear::polish_local_with_options(&raw_transcript, &options)?,
         }

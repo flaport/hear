@@ -113,15 +113,7 @@ mod tests {
 
         assert_eq!(
             arguments,
-            [
-                "--engine",
-                "whisper",
-                "--polish-engine",
-                "openai",
-                "--context",
-                "auto",
-                "recording.wav"
-            ]
+            ["--engine", "whisper", "--context", "auto", "recording.wav"]
         );
     }
 }
