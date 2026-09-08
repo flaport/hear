@@ -1324,9 +1324,9 @@ version = "0.4.0"
 dependencies = [
  "anyhow",
  "clap",
- "cpal",
  "ctrlc",
  "directories",
+ "hear-core",
  "hound",
  "regex",
  "reqwest",
@@ -1338,13 +1338,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "hear-core"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "cpal",
+ "hound",
+ "libc",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "toml",
+]
+
+[[package]]
 name = "hear-linux"
 version = "0.4.0"
 dependencies = [
  "anyhow",
- "cpal",
  "global-hotkey",
- "hound",
+ "hear-core",
  "keyring",
  "libc",
  "rpassword",
@@ -1377,15 +1391,15 @@ dependencies = [
  "anyhow",
  "arboard",
  "core-graphics 0.25.0",
- "cpal",
  "directories",
  "global-hotkey",
- "hound",
+ "hear-core",
  "keyring",
+ "objc2 0.6.4",
+ "objc2-app-kit 0.3.2",
  "objc2-application-services",
  "rpassword",
  "serde",
- "tempfile",
  "toml",
  "tray-icon",
  "winit",

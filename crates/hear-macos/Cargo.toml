@@ -7,18 +7,18 @@ license = "MIT"
 publish = false
 
 [dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["NSWorkspace", "NSRunningApplication"] }
+hear-core = { path = "../hear-core", features = ["capture"] }
 anyhow = "1.0"
 arboard = "3.6"
 core-graphics = "0.25"
-cpal = "0.18"
 directories = "6.0"
 global-hotkey = "0.8"
-hound = "3.5"
 keyring = "4.2"
 objc2-application-services = { version = "0.3", features = ["AXUIElement"] }
 rpassword = "7.5"
 serde = { version = "1.0", features = ["derive"] }
-tempfile = "3.23"
 toml = "1.1"
 tray-icon = { version = "0.24", default-features = false }
 winit = { version = "0.30", default-features = false }

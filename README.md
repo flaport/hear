@@ -24,7 +24,7 @@ tagged builds.
 To build locally instead:
 
 ```sh
-cargo build --release
+cargo build --release -p hear -p hear-local-polish
 ```
 
 The resulting binary is `target/release/hear`. FFmpeg is required when input
@@ -36,6 +36,7 @@ headers for microphone recording. On Debian or Ubuntu:
 
 ```sh
 sudo apt install build-essential cmake clang libasound2-dev pkg-config ffmpeg
+GGML_NATIVE=OFF cargo build --release -p hear -p hear-local-polish
 ```
 
 ## Usage
@@ -49,7 +50,7 @@ hear recording.mp3 --engine 1
 ```
 
 The engine flags are optional. A Whisper `--model` or `--language` selects
-Whisper automatically; another transcription model selects Codex. A built-in
+Whisper automatically; Codex models require an explicit `--engine codex`, so a misspelled Whisper model cannot switch to another engine. A built-in
 local `--polish-model` or GGUF path selects local polishing. Explicit
 `--engine` and `--polish-engine` values override this inference.
 
@@ -166,7 +167,8 @@ hear --record --save-recording message.wav
 ```
 
 Unless `--save-recording` is supplied, the normalized 16 kHz mono WAV recording
-is deleted after transcription. Progress and warnings go to stderr; the
+is deleted after successful transcription. Failed jobs retain their recording in
+the temporary directory and print its path for retry. Progress and warnings go to stderr; the
 transcript alone goes to stdout or the requested output file.
 Ctrl-C cancels recording without saving or transcribing and exits with status
 130. Recording requires an interactive terminal so Return can be detected.
@@ -197,7 +199,8 @@ The separate [`hear-linux`](crates/hear-linux) workspace crate provides a
 recording and again to stop. It invokes a sibling `hear` binary, copies
 successful transcripts to the clipboard, and can paste them into the active
 application. Clipboard persistence uses `xclip` (X11) or `wl-copy` (Wayland);
-automatic paste uses `xdotool` (X11) or `wtype` (Wayland).
+automatic paste uses `xdotool` on X11 when the original window remains focused.
+Wayland delivery copies to the clipboard.
 
 Install both binaries and a `.desktop` launcher entry with:
 
@@ -221,7 +224,9 @@ fixed prompt. `OPENAI_API_KEY` is deliberately removed from the child process,
 and recursively invoking `hear` is forbidden. Codex models do not accept audio
 directly, and Codex session credentials do not grant access to the transcription
 API, so this engine only succeeds if Codex can discover another usable
-transcription facility. It is intentionally best-effort.
+transcription facility. Its final result must explicitly distinguish a transcript
+from an error; explanations of failure are never treated as transcripts. It is
+intentionally best-effort.
 
 ## OpenAI upload behavior
 
@@ -277,3 +282,65 @@ feature builds the full `hear` binary with recording and local Whisper and
 includes the `local-polish` client feature. That feature exposes
 `polish_local_with_options`, which locates `hear-local-polish` beside the
 current executable or on `PATH`.
+
+## Shared workflow and failure recovery
+
+`hear-core` owns typed engine/model configuration, path identity checks, bounded
+microphone capture, subprocess management, and the app/helper response protocol.
+The platform apps own their UI, credential storage, clipboard, and focus checks.
+Whisper and local polishing retain separate native processes to avoid their
+vendored GGML symbol conflict.
+
+Built-in cached models are checked against the catalog size and SHA-256 before
+each load. Old checksum sidecars are ignored: matching timestamps alone cannot
+prove that the model contents are unchanged.
+
+Recording downmixes fixed-size packets and resamples them into a WAV on a worker.
+The packet queue is bounded; a microphone or writer error invalidates the
+recording instead of delivering incomplete audio. Application helpers have a
+one-hour deadline and are cancelled when the app exits normally.
+
+The apps retain failed recordings, plus available raw or formatted text, in the
+OS temporary directory. The error reports the audio path; retry it with
+`hear /path/to/hear-recording-XXXX.wav`. Successfully delivered recordings are
+removed. Recovery files remain until manually removed or cleaned by the OS.
+Use `[hear].save_recording` for a permanent copy on either platform.
+
+Automatic paste requires the original macOS application or X11 window still to
+be focused. These checks do not track changes to individual text fields. A changed
+or unverifiable application/window leaves the text on the clipboard. The Linux tray
+uses X11/XEmbed. On Wayland, use `hear-app oneshot` from a compositor-managed
+shortcut; delivery copies to the clipboard because focused clients cannot be
+verified through a compositor-independent API.
+
+`hear --json AUDIO` is the app protocol: stdout contains one JSON object with
+`status = "success"`, `raw`, and `text`, or `status = "failure"`, `phase`,
+`message`, and an optional `raw` result. Failures also return a nonzero exit code.
+The ordinary CLI continues to emit plain text.
+
+## Configurable library client
+
+The convenience functions remain available. Embedders can reuse an explicit
+blocking client without changing process environment variables:
+
+```rust,no_run
+use std::{path::Path, time::Duration};
+let client = hear::OpenAiClient::builder("api-key")
+    .connect_timeout(Duration::from_secs(15))
+    .request_timeout(Some(Duration::from_secs(900)))
+    .progress(|event| eprintln!("{event:?}"))
+    .build()?;
+let transcript = client.transcribe(
+    Path::new("meeting.wav"),
+    &hear::TranscriptionOptions::new().polish(hear::PolishOptions::new()),
+)?;
+println!("{}", transcript.text);
+# Ok::<(), hear::Error>(())
+```
+
+The default connection timeout is 15 seconds and the request timeout is 15
+minutes. `request_timeout(None)` disables the request deadline. Progress is
+silent unless a callback is supplied. Run blocking operations on a worker when
+embedding in an asynchronous application. Errors distinguish configuration,
+transport, API status, input, and response failures; `Error::Polishing` retains
+the successful raw transcript and the underlying error.

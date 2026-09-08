@@ -26,26 +26,26 @@ impl PreparedUploads {
     }
 }
 
-pub(super) fn prepare(input: &Path) -> Result<PreparedUploads> {
+pub(super) fn prepare(input: &Path, report: &dyn Fn(String)) -> Result<PreparedUploads> {
     let size = file_size(input)?;
     match initial_plan(is_supported(input), size) {
         InitialPlan::Direct => Ok(PreparedUploads {
             paths: vec![input.to_path_buf()],
             _temporary_files: None,
         }),
-        InitialPlan::Convert => convert(input),
-        InitialPlan::Split => split(input, true),
+        InitialPlan::Convert => convert(input, report),
+        InitialPlan::Split => split(input, true, report),
     }
 }
 
-fn convert(input: &Path) -> Result<PreparedUploads> {
+fn convert(input: &Path, report: &dyn Fn(String)) -> Result<PreparedUploads> {
     require_ffmpeg("converting this audio format for OpenAI")?;
     let directory = temporary_directory()?;
     let converted = directory.path().join("converted.mp3");
-    eprintln!(
+    report(format!(
         "Converting unsupported input format to MP3 with FFmpeg: {}",
         input.display()
-    );
+    ));
     run_ffmpeg(
         input,
         &["-vn", "-ac", "1", "-ar", "16000", "-b:a", "64k"],
@@ -60,20 +60,24 @@ fn convert(input: &Path) -> Result<PreparedUploads> {
         });
     }
 
-    eprintln!(
+    report(format!(
         "Warning: converting {} produced an upload larger than OpenAI's 25 MB limit; splitting it with FFmpeg.",
         input.display()
-    );
+    ));
     split_in_directory(&converted, directory)
 }
 
-fn split(input: &Path, warn_about_source: bool) -> Result<PreparedUploads> {
+fn split(
+    input: &Path,
+    warn_about_source: bool,
+    report: &dyn Fn(String),
+) -> Result<PreparedUploads> {
     require_ffmpeg("compressing or splitting an audio file larger than 25 MB")?;
     if warn_about_source {
-        eprintln!(
+        report(format!(
             "Warning: {} is larger than OpenAI's 25 MB upload limit; compressing and splitting it with FFmpeg.",
             input.display()
-        );
+        ));
     }
     split_in_directory(input, temporary_directory()?)
 }

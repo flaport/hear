@@ -11,17 +11,18 @@ name = "hear-app"
 path = "src/main.rs"
 
 [dependencies]
+hear-core = { path = "../hear-core", features = ["capture"] }
 anyhow = "1.0"
-cpal = "0.18"
 global-hotkey = { version = "0.8", features = ["serde"] }
-hound = "3.5"
 keyring = "4.2"
 libc = "0.2"
 rpassword = "7.5"
 serde = { version = "1.0", features = ["derive"] }
 signal-hook = "0.3"
-tempfile = "3.23"
 toml = "1.1"
 x11rb = { version = "0.13", features = ["allow-unsafe-code"] }
 
 [target.'cfg(not(target_os = "linux"))'.dependencies]
+
+[dev-dependencies]
+tempfile = "3.23"

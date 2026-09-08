@@ -75,10 +75,6 @@ fn ensure(model: &Model) -> Result<PathBuf> {
     let base = BaseDirs::new().context("could not determine the platform cache directory")?;
     let directory = base.cache_dir().join("hear").join("models");
     let destination = directory.join(model.filename);
-    let sidecar = directory.join(format!("{}.sha256", model.filename));
-    if cached_metadata_matches(&destination, &sidecar, model) {
-        return Ok(destination);
-    }
 
     if destination.is_file() {
         eprintln!(
@@ -88,9 +84,7 @@ fn ensure(model: &Model) -> Result<PathBuf> {
         if let Err(error) = verify_file(&destination, model) {
             eprintln!("Cached model failed integrity verification ({error}); re-downloading...");
             let _ = fs::remove_file(&destination);
-            let _ = fs::remove_file(&sidecar);
         } else {
-            write_sidecar(&sidecar, model);
             return Ok(destination);
         }
     }
@@ -150,7 +144,6 @@ fn ensure(model: &Model) -> Result<PathBuf> {
         .persist(&destination)
         .map_err(|error| error.error)
         .with_context(|| format!("could not install local model: {}", destination.display()))?;
-    write_sidecar(&sidecar, model);
     eprintln!(
         "Installed local polishing model at {}.",
         destination.display()
@@ -164,17 +157,6 @@ fn display_size(bytes: u64) -> String {
     } else {
         format!("{:.1} MB", bytes as f64 / 1_000_000.0)
     }
-}
-
-fn cached_metadata_matches(destination: &Path, sidecar: &Path, model: &Model) -> bool {
-    fs::metadata(destination).is_ok_and(|metadata| metadata.len() == model.bytes)
-        && fs::read_to_string(sidecar)
-            .map(|content| content.trim() == model.sha256)
-            .unwrap_or(false)
-}
-
-fn write_sidecar(sidecar: &Path, model: &Model) {
-    let _ = fs::write(sidecar, format!("{}\n", model.sha256));
 }
 
 fn verify_file(path: &Path, model: &Model) -> Result<()> {
@@ -217,6 +199,25 @@ fn copy_and_hash(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cached_model_verification_rejects_same_size_corruption_and_truncation() {
+        let model = Model {
+            name: "test",
+            repository: "test",
+            revision: "test",
+            filename: "test.gguf",
+            bytes: 16,
+            sha256: "43101460d399c8f9746f23b9a6029f0c43cdcfe8008cbd6c2b31b9d9620479f0",
+        };
+        let file = tempfile::NamedTempFile::new().unwrap();
+        fs::write(file.path(), b"hear local model").unwrap();
+        verify_file(file.path(), &model).unwrap();
+        fs::write(file.path(), b"evil local model").unwrap();
+        assert!(verify_file(file.path(), &model).is_err());
+        fs::write(file.path(), b"x").unwrap();
+        assert!(verify_file(file.path(), &model).is_err());
+    }
 
     #[test]
     fn accepts_a_custom_gguf_path() {

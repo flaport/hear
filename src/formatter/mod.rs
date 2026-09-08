@@ -2,15 +2,13 @@ mod prepare;
 mod request;
 mod response;
 
+use anyhow::Result;
 #[cfg(feature = "local-polish")]
-use anyhow::bail;
-use anyhow::{Context, Result};
-#[cfg(feature = "local-polish")]
-use std::io::Write;
+use anyhow::{Context, bail};
 #[cfg(feature = "local-polish")]
 use std::path::PathBuf;
 #[cfg(feature = "local-polish")]
-use std::process::{Command, Stdio};
+use std::process::Command;
 
 use crate::FormatContext;
 use crate::openai_transport;
@@ -18,8 +16,6 @@ use crate::openai_transport;
 use self::prepare::prepare;
 use self::request::build;
 use self::response::parse;
-
-const RESPONSES_URL: &str = "https://api.openai.com/v1/responses";
 
 pub(crate) fn polish(
     transcript: &str,
@@ -33,9 +29,29 @@ pub(crate) fn polish(
         return Ok(prepared.body.to_owned());
     }
 
-    let api_key = openai_transport::api_key()
-        .map_err(|_| anyhow::anyhow!("OPENAI_API_KEY is not set; it is required for --polish"))?;
-    let client = openai_transport::client()?;
+    polish_with_client(
+        &crate::OpenAiClient::from_env()?,
+        transcript,
+        model,
+        explicit_context,
+        dictionary_context,
+        custom_instruction,
+    )
+    .map_err(Into::into)
+}
+pub(crate) fn polish_with_client(
+    client: &crate::OpenAiClient,
+    transcript: &str,
+    model: Option<&str>,
+    explicit_context: Option<FormatContext>,
+    dictionary_context: Option<&str>,
+    custom_instruction: Option<&str>,
+) -> std::result::Result<String, crate::Error> {
+    let prepared = prepare(transcript, explicit_context).map_err(crate::Error::Input)?;
+    if prepared.context == FormatContext::Verbatim {
+        return Ok(prepared.body.to_owned());
+    }
+    client.report(crate::ProgressEvent::Polishing);
     let request = build(
         model,
         prepared.context,
@@ -44,13 +60,14 @@ pub(crate) fn polish(
         custom_instruction,
     );
     let response = client
-        .post(RESPONSES_URL)
-        .bearer_auth(api_key)
+        .http
+        .post(client.endpoint("responses"))
+        .bearer_auth(&client.key)
         .json(&request)
         .send()
-        .context("OpenAI formatting request failed")?;
-    let body = openai_transport::response_body(response, "formatting")?;
-    parse(&body)
+        .map_err(crate::Error::Transport)?;
+    let body = openai_transport::response_body(response)?;
+    parse(&body).map_err(crate::Error::Response)
 }
 
 #[cfg(feature = "local-polish")]
@@ -81,25 +98,19 @@ fn run_local_helper(instructions: &str, input: &str, model: Option<&str>) -> Res
         "input": input,
         "model": model,
     });
-    let mut child = Command::new(local_helper_path())
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
-        .spawn()
-        .context(
-            "could not launch the local polishing helper; install hear-local-polish alongside hear",
-        )?;
-    child
-        .stdin
-        .take()
-        .context("could not open the local polishing helper input")?
-        .write_all(request.to_string().as_bytes())
-        .context("could not send the transcript to the local polishing helper")?;
-    let output = child
-        .wait_with_output()
-        .context("could not wait for the local polishing helper")?;
+    let output = hear_core::process::run(
+        &mut Command::new(local_helper_path()),
+        Some(request.to_string().into_bytes()),
+        &hear_core::process::Cancellation::default(),
+        std::time::Duration::from_secs(3600),
+        false,
+    )?;
     if !output.status.success() {
-        bail!("local polishing helper failed with {}", output.status);
+        bail!(
+            "local polishing helper failed with {}: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
     let transcript = String::from_utf8(output.stdout)
         .context("local polishing helper returned text that was not UTF-8")?;

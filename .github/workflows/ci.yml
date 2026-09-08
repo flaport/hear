@@ -12,6 +12,8 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-22.04
+    env:
+      GGML_NATIVE: "OFF"
 
     steps:
       - name: Check out source
@@ -30,10 +32,10 @@ jobs:
         run: cargo fmt --all --check
 
       - name: Lint all targets
-        run: cargo clippy --locked -p hear --all-targets -- -D warnings
+        run: cargo clippy --locked -p hear -p hear-core --all-targets -- -D warnings
 
       - name: Test full CLI and library
-        run: cargo test --locked -p hear --all-targets
+        run: cargo test --locked -p hear -p hear-core --all-targets
 
       - name: Test minimal library
         run: cargo test --locked --no-default-features --lib
@@ -48,6 +50,8 @@ jobs:
 
   linux-companion:
     runs-on: ubuntu-22.04
+    env:
+      GGML_NATIVE: "OFF"
 
     steps:
       - name: Check out source
@@ -69,13 +73,22 @@ jobs:
         run: cargo clippy --locked -p hear-linux --all-targets -- -D warnings
 
       - name: Build Linux companion
-        run: cargo build --locked --release -p hear -p hear-linux
+        run: cargo build --locked --release -p hear -p hear-linux -p hear-local-polish
+
+      - name: Test local polishing helper
+        run: cargo test --locked -p hear-local-polish
+
+      - name: Lint local polishing helper
+        run: cargo clippy --locked -p hear-local-polish --all-targets -- -D warnings
 
       - name: Verify install script
         run: |
           test -x crates/hear-linux/install.sh
           test -x target/release/hear-app
           test -x target/release/hear
+          test -x target/release/hear-local-polish
+          PREFIX="$RUNNER_TEMP/hear-install" crates/hear-linux/install.sh
+          "$RUNNER_TEMP/hear-install/bin/hear" --help
 
   macos-companion:
     runs-on: macos-15
@@ -91,7 +104,7 @@ jobs:
           components: clippy
 
       - name: Test macOS companion
-        run: cargo test --locked -p hear-macos
+        run: cargo test --locked -p hear-macos -p hear-core -p hear-local-polish
 
       - name: Lint macOS companion
         run: cargo clippy --locked -p hear-macos --all-targets -- -D warnings
@@ -105,3 +118,4 @@ jobs:
           codesign --verify --deep --strict --verbose=2 dist/Hear.app
           test -x dist/Hear.app/Contents/MacOS/hear-macos
           test -x dist/Hear.app/Contents/Helpers/hear
+          test -x dist/Hear.app/Contents/Helpers/hear-local-polish

@@ -2,7 +2,7 @@ use std::fs::OpenOptions;
 use std::io::{self, Write};
 use std::path::Path;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 
 use crate::cli::Cli;
 
@@ -19,25 +19,8 @@ pub fn preflight(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
-fn ensure_writable_destination(path: &Path, force: bool, description: &str) -> Result<()> {
-    if path.exists() && !force {
-        bail!(
-            "{description} destination already exists: {}; use --force to overwrite it",
-            path.display()
-        );
-    }
-    let parent = path
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty());
-    if let Some(parent) = parent
-        && !parent.is_dir()
-    {
-        bail!(
-            "parent directory for {description} does not exist: {}",
-            parent.display()
-        );
-    }
-    Ok(())
+fn ensure_writable_destination(path: &Path, force: bool, _description: &str) -> Result<()> {
+    hear_core::files::preflight(path, force)
 }
 
 pub fn write_transcript(transcript: &str, destination: Option<&Path>, force: bool) -> Result<()> {

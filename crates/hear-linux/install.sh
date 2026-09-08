@@ -4,7 +4,7 @@ set -eu
 repository_root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 prefix="${PREFIX:-$HOME/.local}"
 
-cargo build --manifest-path "$repository_root/Cargo.toml" --locked --release \
+GGML_NATIVE="${GGML_NATIVE:-OFF}" cargo build --manifest-path "$repository_root/Cargo.toml" --locked --release \
     -p hear -p hear-linux -p hear-local-polish
 
 mkdir -p "$prefix/bin"

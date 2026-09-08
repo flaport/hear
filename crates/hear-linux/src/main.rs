@@ -12,7 +12,7 @@ mod transcriber;
 fn main() {
     let result = match std::env::args().nth(1).as_deref() {
         Some("tray") => config::Config::load().and_then(app::App::run),
-        Some("oneshot") => config::Config::load().and_then(oneshot::run),
+        Some("oneshot") => oneshot::run(),
         Some("install-api-key") => credentials::install_api_key(),
         Some("remove-api-key") => credentials::remove_api_key(),
         Some("help" | "--help" | "-h") => {

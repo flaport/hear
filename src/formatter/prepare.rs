@@ -15,7 +15,7 @@ pub(super) fn prepare(
     if transcript.is_empty() {
         bail!("cannot polish an empty transcript");
     }
-    if let Some(context) = explicit_context {
+    if let Some(context) = explicit_context.filter(|c| *c != FormatContext::Auto) {
         return Ok(PreparedTranscript {
             context,
             body: transcript,
@@ -65,6 +65,12 @@ fn directive_context(token: &str) -> Option<FormatContext> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn explicit_auto_still_honors_spoken_verbatim() {
+        let prepared = prepare("Verbatim Keep this", Some(FormatContext::Auto)).unwrap();
+        assert_eq!(prepared.context, FormatContext::Verbatim);
+        assert_eq!(prepared.body, "Keep this");
+    }
     #[test]
     fn recognizes_and_removes_spoken_directive() {
         let prepared = prepare("Email: Hi Sam, here is the proposal.", None).unwrap();

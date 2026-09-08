@@ -21,7 +21,7 @@ const MAX_OUTPUT_TOKENS: usize = 4_096;
 const OUTPUT_GRAMMAR: &str = r#"
 root ::= "{" ws "\"kind\"" ws ":" ws kind "," ws "\"text\"" ws ":" ws string ws "}"
 kind ::= "\"email\"" | "\"message\"" | "\"todo\"" | "\"notes\"" | "\"plain\""
-string ::= "\"" ([^"\\] | "\\" (["\\/bfnrt] | "u" [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]))* "\""
+string ::= "\"" ([^"\\\x00-\x1f] | "\\" (["\\/bfnrt] | "u" [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]))* "\""
 ws ::= [ \t\n\r]*
 "#;
 
@@ -107,11 +107,11 @@ fn generate(backend: &LlamaBackend, model: &LlamaModel, prompt: &str) -> Result<
         .context("could not initialize structured local output")?;
     let mut selector = LlamaSampler::greedy();
     let max_output = MAX_OUTPUT_TOKENS.min(CONTEXT_TOKENS as usize - batch.n_tokens() as usize);
-    let mut position = batch.n_tokens();
+    let first_position = batch.n_tokens();
     let mut decoder = encoding_rs::UTF_8.new_decoder();
     let mut output = String::new();
 
-    for _ in 0..max_output {
+    for position in (first_position..).take(max_output) {
         let mut candidates = context.token_data_array_ith(batch.n_tokens() - 1);
         grammar.apply(&mut candidates);
         selector.apply(&mut candidates);
@@ -136,7 +136,6 @@ fn generate(backend: &LlamaBackend, model: &LlamaModel, prompt: &str) -> Result<
         batch
             .add(token, position, &[0], true)
             .context("could not add a generated token to the inference batch")?;
-        position += 1;
         context
             .decode(&mut batch)
             .context("could not evaluate a generated local model token")?;

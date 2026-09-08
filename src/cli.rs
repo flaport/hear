@@ -1,34 +1,10 @@
-use std::{fmt, path::PathBuf};
+use std::path::PathBuf;
 
 use anyhow::{Result, bail};
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Parser, Subcommand};
 use hear::FormatContext;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-pub enum Engine {
-    #[value(name = "gpt-transcribe", alias = "1")]
-    GptTranscribe,
-    #[value(alias = "2")]
-    Codex,
-    #[value(alias = "3")]
-    Whisper,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-pub enum PolishEngine {
-    Openai,
-    Local,
-}
-
-impl fmt::Display for Engine {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(match self {
-            Self::GptTranscribe => "gpt-transcribe",
-            Self::Codex => "codex",
-            Self::Whisper => "whisper",
-        })
-    }
-}
+pub use hear_core::{Engine, PolishEngine};
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
@@ -68,6 +44,9 @@ pub enum DictionaryCommand {
 #[derive(Debug, Parser)]
 #[command(version, about)]
 pub struct Cli {
+    /// Machine-readable helper result, including partial failures.
+    #[arg(long, hide = true)]
+    pub json: bool,
     #[command(subcommand)]
     pub command: Option<Command>,
 
@@ -139,7 +118,8 @@ pub struct Cli {
 impl Cli {
     pub fn validate(&self) -> Result<()> {
         if matches!(self.command, Some(Command::Dictionary { .. })) {
-            if self.input.is_some()
+            if self.json
+                || self.input.is_some()
                 || self.record
                 || self.save_recording.is_some()
                 || self.engine.is_some()
@@ -161,40 +141,13 @@ impl Cli {
         if !self.record && self.input.is_none() {
             bail!("provide an audio file or use --record");
         }
-        if self.engine == Some(Engine::GptTranscribe) && self.model.is_some() {
-            bail!("--model is only valid with --engine codex or --engine whisper");
-        }
-        if self.language.is_some() && self.engine.is_some_and(|engine| engine != Engine::Whisper) {
-            bail!("--language is only valid with --engine whisper");
-        }
-        if self.raw_output.is_some() && !self.should_polish() {
-            bail!("--raw-output cannot be used with --no-polish");
-        }
-        if let (Some(output), Some(recording)) = (&self.output, &self.save_recording)
-            && paths_refer_to_same_file(output, recording)
-        {
-            bail!("--output and --save-recording must refer to different files");
-        }
-        if let (Some(input), Some(output)) = (&self.input, &self.output)
-            && paths_refer_to_same_file(input, output)
-        {
-            bail!("the transcript output must not overwrite the input audio file");
-        }
-        let paths = [
-            (self.input.as_ref(), "audio input"),
-            (self.output.as_ref(), "transcript output"),
-            (self.raw_output.as_ref(), "raw transcript output"),
-            (self.save_recording.as_ref(), "saved recording"),
-        ];
-        for (index, (left, left_name)) in paths.iter().enumerate() {
-            for (right, right_name) in paths.iter().skip(index + 1) {
-                if let (Some(left), Some(right)) = (left, right)
-                    && paths_refer_to_same_file(left, right)
-                {
-                    bail!("{left_name} and {right_name} must refer to different files");
-                }
-            }
-        }
+        self.hear_config().validate()?;
+        hear_core::files::ensure_distinct(&[
+            self.input.as_deref(),
+            self.output.as_deref(),
+            self.raw_output.as_deref(),
+            self.save_recording.as_deref(),
+        ])?;
         Ok(())
     }
 
@@ -207,55 +160,27 @@ impl Cli {
             .filter(|context| *context != FormatContext::Auto)
     }
 
+    pub fn hear_config(&self) -> hear_core::HearConfig {
+        hear_core::HearConfig {
+            engine: self.engine,
+            model: self.model.clone(),
+            language: self.language.clone(),
+            polish_engine: self.polish_engine,
+            polish_model: self.polish_model.clone(),
+            context: self.context.unwrap_or(FormatContext::Auto),
+            polish: self.should_polish(),
+            output: self.output.clone(),
+            raw_output: self.raw_output.clone(),
+            save_recording: self.save_recording.clone(),
+            force: self.force,
+        }
+    }
     pub fn resolved_engine(&self) -> Engine {
-        self.engine.unwrap_or_else(|| {
-            if self.language.is_some() || self.model.as_deref().is_some_and(is_whisper_model) {
-                Engine::Whisper
-            } else if self.model.is_some() {
-                Engine::Codex
-            } else {
-                Engine::GptTranscribe
-            }
-        })
+        self.hear_config().resolved_engine()
     }
-
     pub fn resolved_polish_engine(&self) -> PolishEngine {
-        self.polish_engine.unwrap_or_else(|| {
-            if self
-                .polish_model
-                .as_deref()
-                .is_some_and(is_local_polish_model)
-            {
-                PolishEngine::Local
-            } else {
-                PolishEngine::Openai
-            }
-        })
+        self.hear_config().resolved_polish_engine()
     }
-}
-
-fn is_whisper_model(model: &str) -> bool {
-    matches!(
-        model,
-        "tiny.en" | "base.en" | "small.en" | "medium.en" | "large-v3-turbo"
-    )
-}
-
-fn is_local_polish_model(model: &str) -> bool {
-    matches!(
-        model,
-        "qwen3.5-2b" | "qwen3.5-2b-q4_k_m" | "qwen3.5-0.8b" | "qwen3.5-0.8b-q4_k_m"
-    ) || PathBuf::from(model)
-        .extension()
-        .is_some_and(|extension| extension.eq_ignore_ascii_case("gguf"))
-}
-
-fn paths_refer_to_same_file(left: &PathBuf, right: &PathBuf) -> bool {
-    left == right
-        || left
-            .canonicalize()
-            .and_then(|left| right.canonicalize().map(|right| left == right))
-            .unwrap_or(false)
 }
 
 #[cfg(test)]
@@ -381,7 +306,15 @@ mod tests {
         .unwrap();
         assert!(openai.validate().is_err());
 
-        let whisper = Cli::try_parse_from(["hear", "message.wav", "--language", "de"]).unwrap();
+        let whisper = Cli::try_parse_from([
+            "hear",
+            "message.wav",
+            "--model",
+            "large-v3-turbo",
+            "--language",
+            "de",
+        ])
+        .unwrap();
         assert!(whisper.validate().is_ok());
         assert_eq!(whisper.resolved_engine(), Engine::Whisper);
     }

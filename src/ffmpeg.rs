@@ -22,15 +22,19 @@ pub(crate) fn run_ffmpeg(
     output: &Path,
     operation: &str,
 ) -> Result<()> {
-    let status = Command::new("ffmpeg")
+    let output = Command::new("ffmpeg")
         .args(["-hide_banner", "-loglevel", "error", "-y", "-i"])
         .arg(input)
         .args(arguments)
         .arg(output)
-        .status()
+        .output()
         .with_context(|| format!("could not launch FFmpeg to {operation}"))?;
-    if !status.success() {
-        bail!("FFmpeg could not {operation}: {}", input.display());
+    if !output.status.success() {
+        bail!(
+            "FFmpeg could not {operation}: {}: {}",
+            input.display(),
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
     }
     Ok(())
 }

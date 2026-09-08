@@ -2,13 +2,16 @@ use anyhow::{Context, Result};
 use core_graphics::event::{CGEvent, CGEventFlags, CGEventTapLocation};
 use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
 
-pub fn deliver(transcript: &str, paste: bool) -> Result<bool> {
+pub fn deliver(transcript: &str, paste: bool, target: Option<&PasteTarget>) -> Result<bool> {
     arboard::Clipboard::new()
         .context("could not access the clipboard")?
         .set_text(transcript)
         .context("could not copy the transcript")?;
 
-    if paste && accessibility_is_trusted() {
+    if paste
+        && target.is_some_and(|target| Some(target.clone()) == capture_target())
+        && accessibility_is_trusted()
+    {
         post_paste()?;
         Ok(true)
     } else {
@@ -33,4 +36,11 @@ fn post_paste() -> Result<()> {
     key_down.post(CGEventTapLocation::HID);
     key_up.post(CGEventTapLocation::HID);
     Ok(())
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct PasteTarget(objc2::rc::Retained<objc2_app_kit::NSRunningApplication>);
+pub fn capture_target() -> Option<PasteTarget> {
+    let workspace = objc2_app_kit::NSWorkspace::sharedWorkspace();
+    workspace.frontmostApplication().map(PasteTarget)
 }

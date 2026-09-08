@@ -9,7 +9,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 use clap::Parser;
-use tempfile::TempPath;
+use hear_core::helper::{Recording, Response};
 
 use crate::cli::{Cli, Command, Engine, PolishEngine};
 
@@ -18,30 +18,83 @@ enum RunOutcome {
     Cancelled,
 }
 
+#[derive(Default)]
+struct Progress {
+    phase: &'static str,
+    raw: Option<String>,
+    text: Option<String>,
+    recording: Option<Recording>,
+}
 fn main() {
-    match run() {
-        Ok(RunOutcome::Completed) => {}
-        Ok(RunOutcome::Cancelled) => std::process::exit(130),
+    let cli = Cli::parse();
+    let mut progress = Progress {
+        phase: "validation",
+        ..Progress::default()
+    };
+    let result = run(&cli, &mut progress);
+    if cli.json {
+        let response = match &result {
+            Ok(RunOutcome::Completed) => Response::Success {
+                raw: progress.raw.clone().unwrap_or_default(),
+                text: progress.text.clone().unwrap_or_default(),
+            },
+            Ok(RunOutcome::Cancelled) => Response::Failure {
+                phase: "recording".into(),
+                message: "cancelled".into(),
+                raw: None,
+            },
+            Err(error) => Response::Failure {
+                phase: progress.phase.into(),
+                message: format!("{error:#}"),
+                raw: progress.raw.clone(),
+            },
+        };
+        println!(
+            "{}",
+            serde_json::to_string(&response).expect("serializable response")
+        );
+    }
+    let exit = match result {
+        Ok(RunOutcome::Completed) => 0,
+        Ok(RunOutcome::Cancelled) => 130,
         Err(error) => {
             eprintln!("error: {error:#}");
-            std::process::exit(1);
+            if !cli.json
+                && let Some(raw) = &progress.raw
+            {
+                eprintln!("Raw transcript retained below:\n{raw}");
+            }
+            1
         }
+    };
+    if (exit == 0 || exit == 130)
+        && let Some(recording) = progress.recording.take()
+    {
+        recording.delivered();
+    }
+    if exit == 1
+        && let (Some(recording), Some(raw)) = (&mut progress.recording, &progress.raw)
+    {
+        recording.remember_transcript(raw);
+    }
+    // Drop before process::exit so failed recordings are preserved and reported.
+    drop(progress);
+    if exit != 0 {
+        std::process::exit(exit);
     }
 }
-
-fn run() -> Result<RunOutcome> {
-    let cli = Cli::parse();
+fn run(cli: &Cli, progress: &mut Progress) -> Result<RunOutcome> {
     cli.validate()?;
     if let Some(Command::Dictionary { command }) = &cli.command {
         dictionary::run(command)?;
         return Ok(RunOutcome::Completed);
     }
-    output::preflight(&cli)?;
+    output::preflight(cli)?;
 
     let dictionary = dictionary::Dictionary::load()?;
     let vocabulary = dictionary.canonical_terms();
 
-    let mut temporary_recording: Option<TempPath> = None;
+    progress.phase = "recording";
     let input = if cli.record {
         let path = match &cli.save_recording {
             Some(path) => path.clone(),
@@ -52,12 +105,14 @@ fn run() -> Result<RunOutcome> {
                     .tempfile()
                     .context("could not create a temporary recording file")?;
                 let path = tempfile.path().to_path_buf();
-                temporary_recording = Some(tempfile.into_temp_path());
+                progress.recording = Some(Recording::new(tempfile.into_temp_path()));
                 path
             }
         };
 
-        if audio::record(&path)? == audio::RecordingOutcome::Cancelled {
+        if audio::record(&path, cli.force || progress.recording.is_some())?
+            == audio::RecordingOutcome::Cancelled
+        {
             return Ok(RunOutcome::Cancelled);
         }
         path
@@ -68,11 +123,23 @@ fn run() -> Result<RunOutcome> {
     };
 
     validate_input(&input)?;
+    progress.phase = "transcription";
     let engine = cli.resolved_engine();
     eprintln!("Transcribing with {engine}...");
 
     let raw_transcript = match engine {
-        Engine::GptTranscribe => hear::transcribe_openai_raw(&input, &vocabulary)?,
+        Engine::GptTranscribe => hear::OpenAiClient::builder(
+            std::env::var("OPENAI_API_KEY").context("OPENAI_API_KEY is not set")?,
+        )
+        .progress(|event| match event {
+            hear::ProgressEvent::Uploading { part, total } if total > 1 => {
+                eprintln!("Uploading part {part} of {total}...")
+            }
+            hear::ProgressEvent::Message(message) => eprintln!("{message}"),
+            _ => {}
+        })
+        .build()?
+        .transcribe_raw(&input, &vocabulary)?,
         Engine::Codex => engines::codex::transcribe(&input, cli.model.as_deref(), &vocabulary)?,
         Engine::Whisper => engines::whisper::transcribe(
             &input,
@@ -83,10 +150,13 @@ fn run() -> Result<RunOutcome> {
     };
     let raw_transcript = dictionary.correct_aliases(&raw_transcript)?;
 
+    progress.raw = Some(raw_transcript.clone());
+    progress.phase = "output";
     if let Some(path) = cli.raw_output.as_deref() {
         output::write_transcript(&raw_transcript, Some(path), cli.force)?;
     }
     let transcript = if cli.should_polish() {
+        progress.phase = "polishing";
         eprintln!("Polishing transcript...");
         let dictionary_context = dictionary.formatter_context();
         let mut options = hear::PolishOptions::new();
@@ -106,8 +176,11 @@ fn run() -> Result<RunOutcome> {
     } else {
         raw_transcript
     };
-    output::write_transcript(&transcript, cli.output.as_deref(), cli.force)?;
-    drop(temporary_recording);
+    progress.phase = "output";
+    if !cli.json || cli.output.is_some() {
+        output::write_transcript(&transcript, cli.output.as_deref(), cli.force)?;
+    }
+    progress.text = Some(transcript);
     Ok(RunOutcome::Completed)
 }
 

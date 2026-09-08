@@ -21,7 +21,7 @@ transcription engines and formatting remain owned by `hear`.
 Build both binaries:
 
 ```sh
-cargo build -p hear -p hear-linux -p hear-local-polish
+GGML_NATIVE=OFF cargo build -p hear -p hear-linux -p hear-local-polish
 ```
 
 Install the companion and helper binary:
@@ -97,14 +97,14 @@ Paste shortcut overrides use X11 window classes and `xdotool` shortcut syntax.
 
 Clipboard persistence requires `xclip` on X11 or `wl-copy` from
 `wl-clipboard` on Wayland. The "Paste Automatically" option additionally
-requires `xdotool` (X11) or `wtype` (Wayland):
+requires `xdotool` on X11:
 
 ```sh
 # X11
 sudo apt install xclip xdotool   # or: sudo pacman -S xclip xdotool
 
 # Wayland
-sudo apt install wl-clipboard wtype   # or: sudo pacman -S wl-clipboard wtype
+sudo apt install wl-clipboard   # or: sudo pacman -S wl-clipboard
 ```
 
 If paste injection is unavailable, the transcript remains on the clipboard.
@@ -128,3 +128,23 @@ continues to launch the tray app, so either integration can be used.
 The install script places a `.desktop` file in
 `~/.local/share/applications/hear.desktop` so the app appears in your
 application launcher.
+
+## Recording recovery and platform support
+
+Configuration, recording, and helper execution use `hear-core`. Invalid model,
+language, and output combinations are checked before recording. Unknown
+transcription models require an explicit `engine = "codex"`.
+
+One-shot toggling uses an exclusively locked Unix socket in a private runtime
+directory. It never reads or signals PIDs from a previous invocation. SIGINT and
+SIGTERM cancel an active operation.
+
+The tray requires an X11 server and an XEmbed system tray. For native Wayland,
+use the one-shot mode with a compositor-managed shortcut. Wayland delivery is
+clipboard-only; X11 automatic paste requires the window focused at recording
+start to remain focused when transcription completes.
+
+Failures retain the WAV and available transcript in the temporary directory;
+the error includes the recording path. Retry with `hear /path/to/recording.wav`.
+Successful delivery removes the temporary recording. Closing the app normally
+cancels and reaps its active helper.

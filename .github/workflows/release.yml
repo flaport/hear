@@ -21,6 +21,8 @@ jobs:
           - runner: ubuntu-22.04-arm
             target: aarch64-unknown-linux-gnu
     runs-on: ${{ matrix.runner }}
+    env:
+      GGML_NATIVE: "OFF"
 
     steps:
       - name: Check out source
@@ -56,7 +58,7 @@ jobs:
 
       - name: Build Linux release binaries
         if: runner.os == 'Linux'
-        run: cargo build --locked --release -p hear -p hear-linux --target "${{ matrix.target }}"
+        run: cargo build --locked --release -p hear -p hear-linux -p hear-local-polish --target "${{ matrix.target }}"
 
       - name: Build macOS CLI and application bundle
         if: runner.os == 'macOS'
@@ -72,10 +74,10 @@ jobs:
         run: |
           mkdir -p artifacts
           tar -C "target/${{ matrix.target }}/release" -czf \
-            "artifacts/hear-${GITHUB_REF_NAME}-${{ matrix.target }}.tar.gz" hear
+            "artifacts/hear-${GITHUB_REF_NAME}-${{ matrix.target }}.tar.gz" hear hear-local-polish
           if [[ "${{ runner.os }}" == "Linux" ]]; then
             tar -C "target/${{ matrix.target }}/release" -czf \
-              "artifacts/hear-app-${GITHUB_REF_NAME}-${{ matrix.target }}.tar.gz" hear-app
+              "artifacts/hear-app-${GITHUB_REF_NAME}-${{ matrix.target }}.tar.gz" hear-app hear hear-local-polish
           else
             ditto -c -k --sequesterRsrc --keepParent dist/Hear.app \
               "artifacts/Hear-${GITHUB_REF_NAME}-${{ matrix.target }}.zip"

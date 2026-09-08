@@ -144,22 +144,41 @@ impl Dictionary {
             .collect::<Vec<_>>();
         aliases.sort_by_key(|(alias, _)| std::cmp::Reverse(alias.chars().count()));
 
-        let mut corrected = transcript.to_owned();
-        for (alias, term) in aliases {
-            let starts_with_word = alias.chars().next().is_some_and(is_word_character);
-            let ends_with_word = alias.chars().next_back().is_some_and(is_word_character);
-            let pattern = format!(
-                "(?i){}{}{}",
-                if starts_with_word { r"\b" } else { "" },
-                regex::escape(alias),
-                if ends_with_word { r"\b" } else { "" }
-            );
-            let regex = Regex::new(&pattern).context("could not compile a dictionary alias")?;
-            corrected = regex
-                .replace_all(&corrected, |_captures: &Captures<'_>| term)
-                .into_owned();
+        if aliases.is_empty() {
+            return Ok(transcript.to_owned());
         }
-        Ok(corrected)
+        let patterns = aliases
+            .iter()
+            .enumerate()
+            .map(|(index, (alias, _))| {
+                format!(
+                    "(?P<a{index}>{}{}{})",
+                    if alias.chars().next().is_some_and(is_word_character) {
+                        r"\b"
+                    } else {
+                        ""
+                    },
+                    regex::escape(alias),
+                    if alias.chars().next_back().is_some_and(is_word_character) {
+                        r"\b"
+                    } else {
+                        ""
+                    }
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("|");
+        let regex = Regex::new(&format!("(?i){patterns}"))
+            .context("could not compile dictionary aliases")?;
+        Ok(regex
+            .replace_all(transcript, |captures: &Captures<'_>| {
+                aliases
+                    .iter()
+                    .enumerate()
+                    .find_map(|(i, (_, term))| captures.name(&format!("a{i}")).map(|_| *term))
+                    .expect("one alias matched")
+            })
+            .into_owned())
     }
 
     fn add(&mut self, term: &str, aliases: &[String], sounds_like: Option<&str>) -> Result<bool> {
@@ -344,6 +363,19 @@ mod tests {
                 .correct_aliases("Use quadrant, not quadrants.")
                 .unwrap(),
             "Use Qdrant, not quadrants."
+        );
+    }
+
+    #[test]
+    fn corrections_do_not_rewrite_previous_canonical_terms() {
+        let mut dictionary = Dictionary::default();
+        dictionary
+            .add("New York", &["new yawk".into()], None)
+            .unwrap();
+        dictionary.add("Old", &["new".into()], None).unwrap();
+        assert_eq!(
+            dictionary.correct_aliases("new yawk is new").unwrap(),
+            "New York is Old"
         );
     }
 

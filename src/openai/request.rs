@@ -1,13 +1,12 @@
 use std::path::Path;
 
+use crate::{Error, OpenAiClient, ProgressEvent};
 use anyhow::{Context, Result};
-use reqwest::blocking::{Client, multipart};
+use reqwest::blocking::multipart;
 use serde::Deserialize;
 
 use super::uploads::prepare;
 use crate::openai_transport;
-
-const TRANSCRIPTIONS_URL: &str = "https://api.openai.com/v1/audio/transcriptions";
 
 #[derive(Debug, Deserialize)]
 struct TranscriptionResponse {
@@ -15,46 +14,56 @@ struct TranscriptionResponse {
 }
 
 pub(crate) fn transcribe(input: &Path, vocabulary: &[String]) -> Result<String> {
-    let api_key = openai_transport::api_key().map_err(|_| {
-        anyhow::anyhow!(
-            "OPENAI_API_KEY is not set; set it or choose --engine codex/2 or --engine whisper/3"
-        )
-    })?;
-    let uploads = prepare(input)?;
-    let client = openai_transport::client()?;
-
-    let mut transcripts = Vec::with_capacity(uploads.paths().len());
+    OpenAiClient::from_env()?
+        .transcribe_raw(input, vocabulary)
+        .map_err(Into::into)
+}
+pub(crate) fn transcribe_with_client(
+    client: &OpenAiClient,
+    input: &Path,
+    vocabulary: &[String],
+) -> std::result::Result<String, Error> {
+    client.report(ProgressEvent::PreparingAudio);
+    let uploads = prepare(input, &|message| {
+        client.report(ProgressEvent::Message(message))
+    })
+    .map_err(Error::Input)?;
+    let mut transcripts = Vec::new();
     for (index, path) in uploads.paths().iter().enumerate() {
-        if uploads.paths().len() > 1 {
-            eprintln!(
-                "Uploading part {} of {}...",
-                index + 1,
-                uploads.paths().len()
-            );
-        }
-        transcripts.push(upload(&client, &api_key, path, vocabulary)?);
+        client.report(ProgressEvent::Uploading {
+            part: index + 1,
+            total: uploads.paths().len(),
+        });
+        transcripts.push(upload(client, path, vocabulary)?);
     }
     Ok(transcripts.join("\n"))
 }
 
-fn upload(client: &Client, api_key: &str, path: &Path, vocabulary: &[String]) -> Result<String> {
+fn upload(
+    client: &OpenAiClient,
+    path: &Path,
+    vocabulary: &[String],
+) -> std::result::Result<String, Error> {
     let mut form = multipart::Form::new()
         .text("model", "gpt-transcribe")
         .file("file", path)
-        .with_context(|| format!("could not open audio for upload: {}", path.display()))?;
+        .with_context(|| format!("could not open audio for upload: {}", path.display()))
+        .map_err(Error::Input)?;
     for term in vocabulary {
         form = form.text("keywords[]", term.clone());
     }
     let response = client
-        .post(TRANSCRIPTIONS_URL)
-        .bearer_auth(api_key)
+        .http
+        .post(client.endpoint("audio/transcriptions"))
+        .bearer_auth(&client.key)
         .multipart(form)
         .send()
-        .context("OpenAI transcription request failed")?;
-    let body = openai_transport::response_body(response, "transcription")?;
+        .map_err(Error::Transport)?;
+    let body = openai_transport::response_body(response)?;
 
     let response: TranscriptionResponse = serde_json::from_str(&body)
-        .context("OpenAI returned an unexpected transcription response")?;
+        .context("OpenAI returned an unexpected transcription response")
+        .map_err(Error::Response)?;
     Ok(response.text.trim().to_owned())
 }
 
@@ -81,8 +90,7 @@ mod tests {
         writer.finalize().unwrap();
 
         upload(
-            &openai_transport::client().unwrap(),
-            &api_key,
+            &OpenAiClient::builder(api_key).build().unwrap(),
             &path,
             &["Flaport".to_owned()],
         )

@@ -1,4 +1,8 @@
-use std::sync::mpsc;
+use std::sync::{
+    Arc as SyncArc,
+    atomic::{AtomicBool, Ordering},
+    mpsc,
+};
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
@@ -22,7 +26,7 @@ const COLOR_RECORDING: u32 = 0xFFCC3333;
 const COLOR_TRANSCRIBING: u32 = 0xFFCC9933;
 
 pub enum AppEvent {
-    TranscriptionFinished(Result<String, String>),
+    TranscriptionFinished(Result<(String, hear_core::helper::Recording), String>),
 }
 
 enum State {
@@ -32,6 +36,9 @@ enum State {
 }
 
 pub struct App {
+    stopping: SyncArc<AtomicBool>,
+    job: Option<hear_core::process::Job>,
+    paste_target: Option<delivery::PasteTarget>,
     conn: RustConnection,
     icon_window: Window,
     state: State,
@@ -130,8 +137,15 @@ impl App {
             }
         };
 
+        let stopping = SyncArc::new(AtomicBool::new(false));
+        for signal in [signal_hook::consts::SIGINT, signal_hook::consts::SIGTERM] {
+            signal_hook::flag::register(signal, stopping.clone())?;
+        }
         let (event_tx, event_rx) = mpsc::channel();
         let mut app = Self {
+            stopping,
+            job: None,
+            paste_target: None,
             conn,
             icon_window,
             state: State::Idle,
@@ -148,6 +162,17 @@ impl App {
 
     fn run_loop(&mut self) -> Result<()> {
         loop {
+            if self.stopping.load(Ordering::Relaxed) {
+                return Ok(());
+            }
+            if let State::Recording(recorder) = &self.state
+                && let Err(error) = recorder.check()
+            {
+                eprintln!("{error:#}");
+                self.state = State::Idle;
+                let _ = self.update_icon();
+            }
+
             while let Some(event) = self.conn.poll_for_event()? {
                 match event {
                     x11rb::protocol::Event::Expose(_) => self.draw_icon()?,
@@ -187,8 +212,9 @@ impl App {
 
     fn toggle_recording(&mut self) {
         match std::mem::replace(&mut self.state, State::Transcribing) {
-            State::Idle => match Recorder::start() {
+            State::Idle => match self.config.hear.preflight().and_then(|_| Recorder::start()) {
                 Ok(recorder) => {
+                    self.paste_target = delivery::capture_target();
                     self.state = State::Recording(recorder);
                     eprintln!("Recording…");
                     let _ = self.update_icon();
@@ -199,32 +225,44 @@ impl App {
                     let _ = self.update_icon();
                 }
             },
-            State::Recording(recorder) => match recorder.finish() {
-                Ok(recording) => {
-                    eprintln!("Transcribing…");
-                    let _ = self.update_icon();
-                    let tx = self.event_tx.clone();
-                    transcriber::transcribe_async(recording, tx, self.config.hear.clone());
-                }
-                Err(error) => {
-                    self.state = State::Idle;
-                    eprintln!("Could not finish recording: {error:#}");
-                    let _ = self.update_icon();
-                }
-            },
+            State::Recording(recorder) => {
+                let pending = recorder.stop();
+                eprintln!("Transcribing…");
+                let _ = self.update_icon();
+                self.job = Some(transcriber::transcribe_async(
+                    pending,
+                    self.event_tx.clone(),
+                    self.config.hear.clone(),
+                ));
+            }
             State::Transcribing => {
                 self.state = State::Transcribing;
             }
         }
     }
 
-    fn transcription_finished(&mut self, result: Result<String, String>) {
+    fn transcription_finished(
+        &mut self,
+        result: Result<(String, hear_core::helper::Recording), String>,
+    ) {
+        self.job.take();
         self.state = State::Idle;
         let _ = self.update_icon();
         match result {
-            Ok(transcript) => match delivery::deliver(&transcript, self.paste, &self.config) {
-                Ok(true) => eprintln!("Pasted."),
-                Ok(false) => eprintln!("Copied to clipboard."),
+            Ok((transcript, recording)) => match delivery::deliver(
+                &transcript,
+                self.paste,
+                &self.config,
+                self.paste_target.as_ref(),
+            ) {
+                Ok(true) => {
+                    recording.delivered();
+                    eprintln!("Pasted.");
+                }
+                Ok(false) => {
+                    recording.delivered();
+                    eprintln!("Copied to clipboard.");
+                }
                 Err(error) => eprintln!("Could not deliver transcript: {error:#}"),
             },
             Err(error) => eprintln!("Transcription failed: {error}"),

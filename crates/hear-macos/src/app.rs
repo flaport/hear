@@ -19,7 +19,7 @@ const POLL_INTERVAL: Duration = Duration::from_millis(50);
 
 #[derive(Debug)]
 pub enum AppEvent {
-    TranscriptionFinished(Result<String, String>),
+    TranscriptionFinished(Result<(String, hear_core::helper::Recording), String>),
 }
 
 enum State {
@@ -38,6 +38,8 @@ struct Ui {
 }
 
 pub struct App {
+    job: Option<hear_core::process::Job>,
+    paste_target: Option<delivery::PasteTarget>,
     proxy: EventLoopProxy<AppEvent>,
     state: State,
     ui: Option<Ui>,
@@ -53,6 +55,8 @@ impl App {
             .context("could not create the macOS event loop")?;
         let proxy = event_loop.create_proxy();
         let mut app = Self {
+            job: None,
+            paste_target: None,
             proxy,
             state: State::Idle,
             ui: None,
@@ -104,8 +108,9 @@ impl App {
 
     fn toggle_recording(&mut self) {
         match std::mem::replace(&mut self.state, State::Transcribing) {
-            State::Idle => match Recorder::start() {
+            State::Idle => match self.config.hear.preflight().and_then(|_| Recorder::start()) {
                 Ok(recorder) => {
+                    self.paste_target = delivery::capture_target();
                     self.state = State::Recording(recorder);
                     self.set_status("Recording…", "Stop Recording", "Hear — Recording");
                 }
@@ -114,48 +119,53 @@ impl App {
                     self.show_error(&format!("Could not record: {error:#}"));
                 }
             },
-            State::Recording(recorder) => match recorder.finish() {
-                Ok(recording) => {
-                    self.set_status("Transcribing…", "Transcribing…", "Hear — Transcribing");
-                    if let Some(ui) = &self.ui {
-                        ui.toggle.set_enabled(false);
-                    }
-                    transcriber::transcribe(
-                        recording,
-                        self.proxy.clone(),
-                        self.config.hear.clone(),
-                    );
+            State::Recording(recorder) => {
+                let pending = recorder.stop();
+                self.set_status("Transcribing…", "Transcribing…", "Hear — Transcribing");
+                if let Some(ui) = &self.ui {
+                    ui.toggle.set_enabled(false);
                 }
-                Err(error) => {
-                    self.state = State::Idle;
-                    self.show_error(&format!("Could not finish recording: {error:#}"));
-                }
-            },
+                self.job = Some(transcriber::transcribe(
+                    pending,
+                    self.proxy.clone(),
+                    self.config.hear.clone(),
+                ));
+            }
             State::Transcribing => {
                 self.state = State::Transcribing;
             }
         }
     }
 
-    fn transcription_finished(&mut self, result: Result<String, String>) {
+    fn transcription_finished(
+        &mut self,
+        result: Result<(String, hear_core::helper::Recording), String>,
+    ) {
+        self.job.take();
         self.state = State::Idle;
         if let Some(ui) = &self.ui {
             ui.toggle.set_enabled(true);
         }
         match result {
-            Ok(transcript) => {
+            Ok((transcript, recording)) => {
                 let paste = self.ui.as_ref().is_some_and(|ui| ui.paste.is_checked());
-                match delivery::deliver(&transcript, paste) {
-                    Ok(true) => self.set_status(
-                        "Pasted — Option-Space to record",
-                        "Start Recording",
-                        "Hear — Pasted",
-                    ),
-                    Ok(false) => self.set_status(
-                        "Copied — Option-Space to record",
-                        "Start Recording",
-                        "Hear — Copied",
-                    ),
+                match delivery::deliver(&transcript, paste, self.paste_target.as_ref()) {
+                    Ok(true) => {
+                        recording.delivered();
+                        self.set_status(
+                            "Pasted — Option-Space to record",
+                            "Start Recording",
+                            "Hear — Pasted",
+                        )
+                    }
+                    Ok(false) => {
+                        recording.delivered();
+                        self.set_status(
+                            "Copied — Option-Space to record",
+                            "Start Recording",
+                            "Hear — Copied",
+                        )
+                    }
                     Err(error) => {
                         self.show_error(&format!("Could not deliver transcript: {error:#}"))
                     }
@@ -228,6 +238,13 @@ impl ApplicationHandler<AppEvent> for App {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        if let State::Recording(recorder) = &self.state
+            && let Err(error) = recorder.check()
+        {
+            self.state = State::Idle;
+            self.show_error(&format!("{error:#}"));
+        }
+
         while let Ok(event) = GlobalHotKeyEvent::receiver().try_recv() {
             if event.id == self.hotkey.id() && event.state == HotKeyState::Pressed {
                 self.toggle_recording();

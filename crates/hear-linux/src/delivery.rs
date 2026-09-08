@@ -6,10 +6,18 @@ use anyhow::{Context, Result, bail};
 
 use crate::config::Config;
 
-pub fn deliver(transcript: &str, paste: bool, config: &Config) -> Result<bool> {
+pub fn deliver(
+    transcript: &str,
+    paste: bool,
+    config: &Config,
+    target: Option<&PasteTarget>,
+) -> Result<bool> {
     copy_to_clipboard(transcript)?;
 
-    if paste && post_paste(config) {
+    if paste
+        && target.is_some_and(|target| Some(target.clone()) == capture_target())
+        && post_paste(config)
+    {
         Ok(true)
     } else {
         Ok(false)
@@ -43,18 +51,11 @@ fn copy_to_clipboard(text: &str) -> Result<()> {
 }
 
 fn post_paste(config: &Config) -> bool {
-    if is_wayland() {
-        Command::new("wtype")
-            .args(["-M", "ctrl", "-P", "v", "-m", "ctrl", "-p", "v"])
-            .status()
-            .is_ok_and(|s| s.success())
-    } else {
-        let shortcut = config.paste_shortcut_for(active_x11_window_class().as_deref());
-        Command::new("xdotool")
-            .args(["key", "--clearmodifiers", shortcut])
-            .status()
-            .is_ok_and(|s| s.success())
-    }
+    let shortcut = config.paste_shortcut_for(active_x11_window_class().as_deref());
+    Command::new("xdotool")
+        .args(["key", "--clearmodifiers", shortcut])
+        .status()
+        .is_ok_and(|s| s.success())
 }
 
 fn active_x11_window_class() -> Option<String> {
@@ -73,4 +74,26 @@ fn active_x11_window_class() -> Option<String> {
 
 fn is_wayland() -> bool {
     std::env::var("WAYLAND_DISPLAY").is_ok_and(|v| !v.is_empty())
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct PasteTarget(String);
+pub fn capture_target() -> Option<PasteTarget> {
+    // There is no compositor-independent Wayland API for verifying focused clients.
+    if is_wayland() {
+        return None;
+    }
+    let o = Command::new("xdotool")
+        .arg("getwindowfocus")
+        .output()
+        .ok()?;
+    if !o.status.success() {
+        return None;
+    }
+    let id = String::from_utf8(o.stdout).ok()?.trim().to_owned();
+    if id.is_empty() {
+        None
+    } else {
+        Some(PasteTarget(id))
+    }
 }

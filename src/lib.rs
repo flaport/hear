@@ -11,6 +11,7 @@ use std::path::Path;
 use anyhow::Result;
 
 pub use context::FormatContext;
+pub use openai_transport::{Error, OpenAiClient, OpenAiClientBuilder, ProgressEvent};
 
 /// Both stages of a transcription, allowing callers to retain or display either.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -106,12 +107,9 @@ pub fn transcribe_openai_with_options(
     input: &Path,
     options: &TranscriptionOptions<'_>,
 ) -> Result<Transcript> {
-    let raw = transcribe_openai_raw(input, options.vocabulary)?;
-    let text = match options.polishing {
-        Some(options) => polish_with_options(&raw, &options)?,
-        None => raw.clone(),
-    };
-    Ok(Transcript { raw, text })
+    OpenAiClient::from_env()?
+        .transcribe(input, options)
+        .map_err(Into::into)
 }
 
 /// Transcribe audio with OpenAI without allocating a duplicate polished field.

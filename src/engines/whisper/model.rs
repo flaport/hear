@@ -68,10 +68,6 @@ pub(super) fn ensure(model: &Model) -> Result<PathBuf> {
     let directory = base.cache_dir().join("hear").join("models");
     let filename = model.filename();
     let destination = directory.join(&filename);
-    let sidecar = directory.join(format!("{filename}.sha256"));
-    if destination.is_file() && sidecar_matches(&sidecar, model) {
-        return Ok(destination);
-    }
 
     if destination.is_file() {
         eprintln!(
@@ -84,9 +80,7 @@ pub(super) fn ensure(model: &Model) -> Result<PathBuf> {
                 error
             );
             let _ = fs::remove_file(&destination);
-            let _ = fs::remove_file(&sidecar);
         } else {
-            write_sidecar(&sidecar, model);
             return Ok(destination);
         }
     }
@@ -124,18 +118,7 @@ pub(super) fn ensure(model: &Model) -> Result<PathBuf> {
         .persist(&destination)
         .map_err(|error| error.error)
         .with_context(|| format!("could not install Whisper model: {}", destination.display()))?;
-    write_sidecar(&sidecar, model);
     Ok(destination)
-}
-
-fn sidecar_matches(sidecar: &Path, model: &Model) -> bool {
-    fs::read_to_string(sidecar)
-        .map(|content| content.trim() == model.sha256)
-        .unwrap_or(false)
-}
-
-fn write_sidecar(sidecar: &Path, model: &Model) {
-    let _ = fs::write(sidecar, format!("{}\n", model.sha256));
 }
 
 fn verify_file(path: &Path, model: &Model) -> Result<()> {
@@ -177,6 +160,23 @@ fn hash_reader(reader: &mut impl Read) -> Result<(u64, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cached_model_verification_rejects_same_size_corruption_and_truncation() {
+        let model = Model {
+            name: "test",
+            bytes: 10,
+            sha256: "93ac1d2aa8c846219d68a880b7daaccea684f95f4ad617e8dd8212a4b3fe939e",
+            multilingual: false,
+        };
+        let file = tempfile::NamedTempFile::new().unwrap();
+        fs::write(file.path(), b"hear model").unwrap();
+        verify_file(file.path(), &model).unwrap();
+        fs::write(file.path(), b"evil model").unwrap();
+        assert!(verify_file(file.path(), &model).is_err());
+        fs::write(file.path(), b"x").unwrap();
+        assert!(verify_file(file.path(), &model).is_err());
+    }
 
     #[test]
     fn maps_supported_model_names_and_capabilities() {

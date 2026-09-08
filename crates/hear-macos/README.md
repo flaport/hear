@@ -81,3 +81,17 @@ Whisper models are `tiny.en`, `base.en`, `small.en`, `medium.en`, and
 `large-v3-turbo`. Local polishing models are `qwen3.5-2b` (the default) and
 `qwen3.5-0.8b`. Fully local configurations do not access Keychain for an
 OpenAI API key.
+
+## Recording recovery
+
+Engine and model validation, audio capture, and helper execution use `hear-core`.
+Invalid configurations are rejected before recording. Unknown transcription
+models require an explicit `engine = "codex"`. The shared `[hear]` settings also
+accept `save_recording`, `output`, `raw_output`, and `force`, as on Linux.
+
+Automatic paste requires the application focused at recording start to remain
+focused after transcription. Otherwise the text stays on the clipboard.
+Failures retain the WAV and available transcript in the temporary directory;
+the error includes the recording path. Retry with `hear /path/to/recording.wav`.
+Successful delivery removes the temporary recording. Quitting Hear cancels and
+reaps an active helper.
