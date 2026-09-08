@@ -61,7 +61,7 @@ impl App {
             state: State::Idle,
             ui: None,
             hotkey_manager: None,
-            hotkey: HotKey::new(Some(Modifiers::ALT), Code::Space),
+            hotkey: HotKey::new(Some(Modifiers::ALT), Code::KeyX),
             config,
         };
         event_loop
@@ -73,9 +73,9 @@ impl App {
         let manager = GlobalHotKeyManager::new().context("could not initialize global hotkeys")?;
         manager
             .register(self.hotkey)
-            .context("could not register Option-Space")?;
+            .context("could not register Option-X")?;
 
-        let status = MenuItem::new("Idle — Option-Space to record", false, None);
+        let status = MenuItem::new("Idle — Option-X to record", false, None);
         let toggle = MenuItem::new("Start Recording", true, None);
         let paste = CheckMenuItem::new(
             "Paste Automatically",
@@ -160,7 +160,7 @@ impl App {
                     Ok(true) => {
                         recording.delivered();
                         self.set_status(
-                            "Pasted — Option-Space to record",
+                            "Pasted — Option-X to record",
                             "Start Recording",
                             "Hear — Pasted",
                         )
@@ -168,7 +168,7 @@ impl App {
                     Ok(false) => {
                         recording.delivered();
                         self.set_status(
-                            "Copied — Option-Space to record",
+                            "Copied — Option-X to record",
                             "Start Recording",
                             "Hear — Copied",
                         )

@@ -1,6 +1,6 @@
 # hear-macos
 
-`hear-macos` is a macOS-only menu-bar companion for `hear`. Press Option-Space
+`hear-macos` is a macOS-only menu-bar companion for `hear`. Press Option-X
 to start recording, press it again to stop, and the app runs the bundled `hear`
 CLI. Successful transcripts are always copied to the clipboard and can
 optionally be pasted into the active application.

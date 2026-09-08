@@ -176,7 +176,7 @@ Ctrl-C cancels recording without saving or transcribing and exits with status
 ## macOS menu-bar companion
 
 The separate [`hear-macos`](crates/hear-macos) workspace crate provides a
-pure-Rust menu-bar application. Press Option-Space once to start recording and
+pure-Rust menu-bar application. Press Option-X once to start recording and
 again to stop. It invokes a bundled `hear` helper, copies successful transcripts
 to the clipboard, and can paste them into the active application when macOS
 Accessibility access is granted.
