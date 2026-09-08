@@ -87,7 +87,10 @@ pub struct Cli {
     #[arg(long, value_enum, default_value_t = Engine::GptTranscribe)]
     pub engine: Engine,
 
-    /// Model for the codex or whisper engine (whisper defaults to tiny.en).
+    /// Model for the selected transcription engine.
+    ///
+    /// Whisper models: tiny.en (default), base.en, small.en, medium.en, and
+    /// large-v3-turbo. Codex accepts a model supported by `codex exec`.
     #[arg(long, value_name = "MODEL")]
     pub model: Option<String>,
 
@@ -95,7 +98,11 @@ pub struct Cli {
     #[arg(long, value_enum, default_value_t = PolishEngine::Openai)]
     pub polish_engine: PolishEngine,
 
-    /// Polishing model; defaults to gpt-5.6-luna or qwen3.5-2b.
+    /// Model for the selected polishing engine.
+    ///
+    /// OpenAI defaults to gpt-5.6-luna and accepts another OpenAI model ID.
+    /// Local polishing supports qwen3.5-2b (the Q4_K_M default), its
+    /// qwen3.5-2b-q4_k_m alias, or a path to a compatible GGUF file.
     #[arg(long, value_name = "MODEL_OR_GGUF_PATH")]
     pub polish_model: Option<String>,
 
@@ -227,6 +234,26 @@ mod tests {
         assert_eq!(cli.polish_engine, PolishEngine::Local);
         assert_eq!(cli.polish_model, None);
         assert!(cli.validate().is_ok());
+    }
+
+    #[test]
+    fn long_help_lists_transcription_and_polishing_models() {
+        use clap::CommandFactory;
+
+        let help = Cli::command().render_long_help().to_string();
+        for model in [
+            "tiny.en",
+            "base.en",
+            "small.en",
+            "medium.en",
+            "large-v3-turbo",
+            "gpt-5.6-luna",
+            "qwen3.5-2b",
+            "qwen3.5-2b-q4_k_m",
+        ] {
+            assert!(help.contains(model), "long help omitted {model}");
+        }
+        assert!(help.contains("compatible GGUF file"));
     }
 
     #[test]
