@@ -84,7 +84,8 @@ OpenAI API key.
 
 ## Menu-bar visibility
 
-Hear's menu-bar icon is a small circle. On macOS 26, its permission is under
+Hear uses the Linux app's microphone icon: adaptive monochrome while idle,
+red while recording, and amber while transcribing. On macOS 26, its permission is under
 System Settings → Menu Bar → Allow in the Menu Bar. The app gives its native
 status item a stable name so macOS can remember your chosen position.
 

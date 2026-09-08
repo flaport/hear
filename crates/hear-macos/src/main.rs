@@ -5,6 +5,7 @@ mod app;
 mod config;
 mod credentials;
 mod delivery;
+mod icon;
 mod recording;
 mod transcriber;
 

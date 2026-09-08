@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use global_hotkey::hotkey::{Code, HotKey, Modifiers};
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem};
-use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
+use tray_icon::{TrayIcon, TrayIconBuilder};
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
@@ -91,7 +91,7 @@ impl App {
         let tray = TrayIconBuilder::new()
             .with_menu(Box::new(menu))
             .with_tooltip("Hear — Idle")
-            .with_icon(icon(false)?)
+            .with_icon(crate::icon::microphone([0, 0, 0])?)
             .with_icon_as_template(true)
             .build()?;
         if let Some(item) = tray.ns_status_item() {
@@ -187,10 +187,14 @@ impl App {
             ui.status.set_text(status);
             ui.toggle.set_text(toggle);
             let _ = ui._tray.set_tooltip(Some(tooltip));
-            let _ = ui._tray.set_icon_with_as_template(
-                icon(matches!(self.state, State::Recording(_))).ok(),
-                true,
-            );
+            let (color, template) = match self.state {
+                State::Idle => ([0, 0, 0], true),
+                State::Recording(_) => ([0xcc, 0x33, 0x33], false),
+                State::Transcribing => ([0xcc, 0x99, 0x33], false),
+            };
+            if let Ok(icon) = crate::icon::microphone(color) {
+                let _ = ui._tray.set_icon_with_as_template(Some(icon), template);
+            }
         }
     }
 
@@ -262,19 +266,4 @@ impl ApplicationHandler<AppEvent> for App {
         }
         event_loop.set_control_flow(ControlFlow::WaitUntil(Instant::now() + POLL_INTERVAL));
     }
-}
-
-fn icon(recording: bool) -> Result<Icon> {
-    let mut rgba = vec![0_u8; 16 * 16 * 4];
-    let radius = if recording { 6.5 } else { 5.0 };
-    for y in 0..16 {
-        for x in 0..16 {
-            let distance = ((x as f32 - 7.5).powi(2) + (y as f32 - 7.5).powi(2)).sqrt();
-            if distance <= radius {
-                let offset = (y * 16 + x) * 4;
-                rgba[offset..offset + 4].copy_from_slice(&[0, 0, 0, 255]);
-            }
-        }
-    }
-    Icon::from_rgba(rgba, 16, 16).context("could not create the menu-bar icon")
 }
