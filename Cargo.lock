@@ -1320,7 +1320,7 @@ checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 
 [[package]]
 name = "hear"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1340,7 +1340,7 @@ dependencies = [
 
 [[package]]
 name = "hear-core"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1355,7 +1355,7 @@ dependencies = [
 
 [[package]]
 name = "hear-linux"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "global-hotkey",
@@ -1372,7 +1372,7 @@ dependencies = [
 
 [[package]]
 name = "hear-local-polish"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "directories",
@@ -1387,7 +1387,7 @@ dependencies = [
 
 [[package]]
 name = "hear-macos"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "arboard",
