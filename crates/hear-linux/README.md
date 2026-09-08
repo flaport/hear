@@ -44,7 +44,8 @@ the keyring entry during development.
 
 The app reads `~/.config/hear-app/config.toml`, or
 `$XDG_CONFIG_HOME/hear-app/config.toml` when `XDG_CONFIG_HOME` is set. Every
-setting is optional; the defaults are equivalent to:
+setting is optional; restart the app after editing the file. The defaults are
+equivalent to:
 
 ```toml
 hotkey = "alt+x"
@@ -88,6 +89,7 @@ engine = "whisper"
 model = "large-v3-turbo"
 language = "nl"
 polish_engine = "local"
+polish_model = "qwen3.5-0.8b"
 ```
 
 Audio capture remains app-owned and is always enabled when the hotkey is used.

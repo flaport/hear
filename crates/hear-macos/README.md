@@ -14,7 +14,7 @@ transcription engines and formatting remain owned by `hear`.
 Build both binaries:
 
 ```sh
-cargo build -p hear -p hear-macos
+cargo build -p hear -p hear-macos -p hear-local-polish
 ```
 
 Create an ad-hoc-signed application bundle:
@@ -44,3 +44,41 @@ The app uses the bundled `Contents/Helpers/hear` binary. Consequently all
 ordinary `hear` engine requirements currently apply. The companion injects its
 Keychain-backed API key into the helper for the default transcription and
 polishing workflow.
+
+## Configuration
+
+The app reads `~/Library/Application Support/hear-app/config.toml`. Every
+setting is optional; restart the app after editing the file. The defaults are
+equivalent to:
+
+```toml
+paste_automatically = true
+
+[hear]
+engine = "gpt-transcribe"
+model = ""
+language = ""
+polish_engine = "openai"
+polish_model = ""
+context = "auto"
+polish = true
+```
+
+An empty model selects the CLI default. For a fully local configuration using
+the smaller polishing model:
+
+```toml
+[hear]
+engine = "whisper"
+model = "tiny.en"
+language = "en"
+polish_engine = "local"
+polish_model = "qwen3.5-0.8b"
+context = "auto"
+polish = true
+```
+
+Whisper models are `tiny.en`, `base.en`, `small.en`, `medium.en`, and
+`large-v3-turbo`. Local polishing models are `qwen3.5-2b` (the default) and
+`qwen3.5-0.8b`. Fully local configurations do not access Keychain for an
+OpenAI API key.

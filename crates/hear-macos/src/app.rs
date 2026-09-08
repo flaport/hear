@@ -10,6 +10,7 @@ use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
 use winit::window::WindowId;
 
+use crate::config::Config;
 use crate::delivery;
 use crate::recording::Recorder;
 use crate::transcriber;
@@ -42,10 +43,11 @@ pub struct App {
     ui: Option<Ui>,
     hotkey_manager: Option<GlobalHotKeyManager>,
     hotkey: HotKey,
+    config: Config,
 }
 
 impl App {
-    pub fn run() -> Result<()> {
+    pub fn run(config: Config) -> Result<()> {
         let event_loop = EventLoop::<AppEvent>::with_user_event()
             .build()
             .context("could not create the macOS event loop")?;
@@ -56,6 +58,7 @@ impl App {
             ui: None,
             hotkey_manager: None,
             hotkey: HotKey::new(Some(Modifiers::ALT), Code::Space),
+            config,
         };
         event_loop
             .run_app(&mut app)
@@ -70,7 +73,12 @@ impl App {
 
         let status = MenuItem::new("Idle — Option-Space to record", false, None);
         let toggle = MenuItem::new("Start Recording", true, None);
-        let paste = CheckMenuItem::new("Paste Automatically", true, true, None);
+        let paste = CheckMenuItem::new(
+            "Paste Automatically",
+            true,
+            self.config.paste_automatically,
+            None,
+        );
         let accessibility = MenuItem::new("Open Accessibility Settings…", true, None);
         let quit = MenuItem::new("Quit Hear", true, None);
         let separator = PredefinedMenuItem::separator();
@@ -112,7 +120,11 @@ impl App {
                     if let Some(ui) = &self.ui {
                         ui.toggle.set_enabled(false);
                     }
-                    transcriber::transcribe(recording, self.proxy.clone());
+                    transcriber::transcribe(
+                        recording,
+                        self.proxy.clone(),
+                        self.config.hear.clone(),
+                    );
                 }
                 Err(error) => {
                     self.state = State::Idle;

@@ -181,6 +181,8 @@ open dist/Hear.app
 ```
 
 See the companion crate's README for Keychain setup and permission details.
+The app reads engine, transcription model, polishing model, context, and paste
+defaults from `~/Library/Application Support/hear-app/config.toml`.
 
 ## Linux system-tray companion
 

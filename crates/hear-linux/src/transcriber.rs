@@ -21,7 +21,8 @@ pub fn transcribe_async(recording: TempPath, tx: mpsc::Sender<AppEvent>, hear: H
 pub(crate) fn run(recording: &Path, hear: &HearConfig) -> anyhow::Result<String> {
     save_recording(recording, hear)?;
     let mut command = helper_command(recording, hear);
-    if std::env::var_os("OPENAI_API_KEY").is_none()
+    if hear.requires_openai()
+        && std::env::var_os("OPENAI_API_KEY").is_none()
         && let Some(api_key) = credentials::stored_api_key()?
     {
         command.env("OPENAI_API_KEY", api_key);
@@ -32,6 +33,9 @@ pub(crate) fn run(recording: &Path, hear: &HearConfig) -> anyhow::Result<String>
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         anyhow::bail!("hear failed with {}: {}", output.status, stderr.trim());
+    }
+    if !output.stderr.is_empty() {
+        eprint!("{}", String::from_utf8_lossy(&output.stderr));
     }
     let transcript = match hear.output_path() {
         Some(path) => fs::read_to_string(path)

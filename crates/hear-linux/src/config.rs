@@ -113,10 +113,11 @@ impl HearConfig {
         let mut arguments = vec!["--engine".to_owned(), self.engine.clone()];
         push_value(&mut arguments, "--model", &self.model);
         push_value(&mut arguments, "--language", &self.language);
-        push_value(&mut arguments, "--polish-engine", &self.polish_engine);
-        push_value(&mut arguments, "--polish-model", &self.polish_model);
-        push_value(&mut arguments, "--context", &self.context);
-        if !self.polish {
+        if self.polish {
+            push_value(&mut arguments, "--polish-engine", &self.polish_engine);
+            push_value(&mut arguments, "--polish-model", &self.polish_model);
+            push_value(&mut arguments, "--context", &self.context);
+        } else {
             arguments.push("--no-polish".to_owned());
         }
         push_value(&mut arguments, "--output", &self.output);
@@ -125,6 +126,10 @@ impl HearConfig {
             arguments.push("--force".to_owned());
         }
         arguments
+    }
+
+    pub fn requires_openai(&self) -> bool {
+        self.engine == "gpt-transcribe" || (self.polish && self.polish_engine == "openai")
     }
 
     pub fn save_recording_path(&self) -> Option<&Path> {
@@ -268,13 +273,25 @@ force = true
                 "whisper",
                 "--language",
                 "nl",
-                "--polish-engine",
-                "openai",
-                "--context",
-                "auto",
                 "--no-polish",
                 "--force"
             ]
+        );
+    }
+
+    #[test]
+    fn local_models_do_not_require_an_openai_key() {
+        let hear = HearConfig {
+            engine: "whisper".to_owned(),
+            polish_engine: "local".to_owned(),
+            polish_model: "qwen3.5-0.8b".to_owned(),
+            ..HearConfig::default()
+        };
+        assert!(!hear.requires_openai());
+        assert!(
+            hear.arguments()
+                .windows(2)
+                .any(|pair| { pair == ["--polish-model", "qwen3.5-0.8b"] })
         );
     }
 }

@@ -8,9 +8,17 @@ cargo build --manifest-path "$repository_root/Cargo.toml" --locked --release \
     -p hear -p hear-linux -p hear-local-polish
 
 mkdir -p "$prefix/bin"
-cp "$repository_root/target/release/hear" "$prefix/bin/hear"
-cp "$repository_root/target/release/hear-app" "$prefix/bin/hear-app"
-cp "$repository_root/target/release/hear-local-polish" "$prefix/bin/hear-local-polish"
+install_binary() {
+    source_path=$1
+    destination=$2
+    temporary="$destination.installing"
+    install -m 755 "$source_path" "$temporary"
+    mv -f "$temporary" "$destination"
+}
+
+install_binary "$repository_root/target/release/hear" "$prefix/bin/hear"
+install_binary "$repository_root/target/release/hear-app" "$prefix/bin/hear-app"
+install_binary "$repository_root/target/release/hear-local-polish" "$prefix/bin/hear-local-polish"
 
 desktop_dir="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
 mkdir -p "$desktop_dir"
