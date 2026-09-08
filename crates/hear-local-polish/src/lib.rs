@@ -186,4 +186,16 @@ mod tests {
         .unwrap();
         assert!(!formatted.is_empty());
     }
+
+    #[test]
+    #[ignore = "downloads and runs the smaller local polishing model"]
+    fn live_small_local_polishing() {
+        let formatted = polish(
+            "Correct punctuation. Return JSON with kind and text.",
+            "hello world this is a test",
+            Some("qwen3.5-0.8b"),
+        )
+        .unwrap();
+        assert!(!formatted.is_empty());
+    }
 }

@@ -101,8 +101,9 @@ pub struct Cli {
     /// Model for the selected polishing engine.
     ///
     /// OpenAI defaults to gpt-5.6-luna and accepts another OpenAI model ID.
-    /// Local polishing supports qwen3.5-2b (the Q4_K_M default), its
-    /// qwen3.5-2b-q4_k_m alias, or a path to a compatible GGUF file.
+    /// Local polishing supports qwen3.5-2b (the Q4_K_M default) and
+    /// qwen3.5-0.8b. Their explicit aliases are qwen3.5-2b-q4_k_m and
+    /// qwen3.5-0.8b-q4_k_m. A compatible GGUF file path is also accepted.
     #[arg(long, value_name = "MODEL_OR_GGUF_PATH")]
     pub polish_model: Option<String>,
 
@@ -250,6 +251,8 @@ mod tests {
             "gpt-5.6-luna",
             "qwen3.5-2b",
             "qwen3.5-2b-q4_k_m",
+            "qwen3.5-0.8b",
+            "qwen3.5-0.8b-q4_k_m",
         ] {
             assert!(help.contains(model), "long help omitted {model}");
         }

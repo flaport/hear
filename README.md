@@ -87,14 +87,17 @@ requires `OPENAI_API_KEY`. This means transcript text is sent to OpenAI even
 when audio was transcribed locally with whisper.cpp.
 
 Use `--polish-engine local` to polish with the bundled `hear-local-polish`
-helper and Qwen3.5-2B instead. Its 1.4 GB Q4_K_M GGUF file is downloaded,
-checksum-verified, and stored in the platform's standard `hear/models` cache
-on first use. Local polishing runs on the CPU on Linux and Intel macOS, and
-uses Metal acceleration on Apple silicon. `--polish-model` can select the
-built-in `qwen3.5-2b` model or a local GGUF file path. For example:
+helper and Qwen3.5 instead. The default 2B Q4_K_M model is 1.4 GB; the smaller
+0.8B model is 580 MB. Each GGUF is downloaded, checksum-verified, and stored in
+the platform's standard `hear/models` cache on first use. Local polishing runs
+on the CPU on Linux and Intel macOS, and uses Metal acceleration on Apple
+silicon. `--polish-model` can select the default `qwen3.5-2b`, the smaller
+`qwen3.5-0.8b`, or a local GGUF file path. Both built-in models use Q4_K_M
+quantization. For example:
 
 ```sh
 hear recording.m4a --engine whisper --polish-engine local
+hear recording.m4a --polish-engine local --polish-model qwen3.5-0.8b
 hear recording.m4a --polish-engine local --polish-model /models/custom.gguf
 ```
 

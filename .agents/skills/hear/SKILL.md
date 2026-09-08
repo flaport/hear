@@ -38,9 +38,11 @@ format, and output choices.
   Use it only when the user explicitly requests that engine.
 
 Polishing is enabled by default and uses OpenAI, even after local Whisper
-transcription. For a fully local workflow, use both `--engine whisper` and
-`--no-polish`. Check whether `OPENAI_API_KEY` exists without printing its value
-before selecting a workflow that needs it.
+transcription. For fully local formatting, combine `--engine whisper` with
+`--polish-engine local`; use `--polish-model qwen3.5-0.8b` for the smaller
+model or omit it for the default `qwen3.5-2b`. Use `--no-polish` for a fully
+local unformatted transcript. Check whether `OPENAI_API_KEY` exists without
+printing its value before selecting a workflow that needs it.
 
 ## Control the result
 
