@@ -82,6 +82,20 @@ Whisper models are `tiny.en`, `base.en`, `small.en`, `medium.en`, and
 `qwen3.5-0.8b`. Fully local configurations do not access Keychain for an
 OpenAI API key.
 
+## Menu-bar visibility
+
+Hear's menu-bar icon is a small circle. On macOS 26, its permission is under
+System Settings → Menu Bar → Allow in the Menu Bar. The app gives its native
+status item a stable name so macOS can remember your chosen position.
+
+If Hear is running and allowed but its icon is invisible, quit Hear and reset
+its saved position, then reopen it:
+
+```sh
+defaults write dev.flaport.hear-macos "NSStatusItem Preferred Position Hear" -float 0
+open /Applications/Hear.app
+```
+
 ## Recording recovery
 
 Engine and model validation, audio capture, and helper execution use `hear-core`.

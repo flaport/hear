@@ -94,6 +94,13 @@ impl App {
             .with_icon(icon(false)?)
             .with_icon_as_template(true)
             .build()?;
+        if let Some(item) = tray.ns_status_item() {
+            // A stable native identity lets macOS restore the user's menu-bar position.
+            // TrayIconBuilder::with_id only identifies events inside tray-icon.
+            item.setAutosaveName(Some(&objc2_app_kit::NSStatusItemAutosaveName::from_str(
+                "Hear",
+            )));
+        }
         self.hotkey_manager = Some(manager);
         self.ui = Some(Ui {
             _tray: tray,
