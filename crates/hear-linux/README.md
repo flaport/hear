@@ -144,6 +144,10 @@ use the one-shot mode with a compositor-managed shortcut. Wayland delivery is
 clipboard-only; X11 automatic paste requires the window focused at recording
 start to remain focused when transcription completes.
 
+If an X11 panel or tray manager restarts or drops the embedded icon, the running
+app recreates and re-docks the icon automatically without losing its hotkey or
+recording state.
+
 Failures retain the WAV and available transcript in the temporary directory;
 the error includes the recording path. Retry with `hear /path/to/recording.wav`.
 Successful delivery removes the temporary recording. Closing the app normally

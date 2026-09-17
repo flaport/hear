@@ -3,7 +3,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
     mpsc,
 };
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use global_hotkey::hotkey::HotKey;
@@ -20,6 +20,7 @@ use crate::transcriber;
 
 const ICON_SIZE: u16 = 22;
 const SYSTEM_TRAY_REQUEST_DOCK: u32 = 0;
+const TRAY_RECOVERY_INTERVAL: Duration = Duration::from_secs(1);
 
 const COLOR_IDLE: u32 = 0xFFF2F2F2;
 const COLOR_RECORDING: u32 = 0xFFCC3333;
@@ -35,12 +36,22 @@ enum State {
     Transcribing,
 }
 
+struct TrayIcon {
+    window: Window,
+    colormap: Option<Colormap>,
+}
+
 pub struct App {
     stopping: SyncArc<AtomicBool>,
     job: Option<hear_core::process::Job>,
     paste_target: Option<delivery::PasteTarget>,
     conn: RustConnection,
-    icon_window: Window,
+    screen_num: usize,
+    tray_atom: Atom,
+    tray_icon: Option<TrayIcon>,
+    tray_owner: Window,
+    tray_needs_dock: bool,
+    next_tray_recovery: Instant,
     state: State,
     paste: bool,
     config: Config,
@@ -55,70 +66,20 @@ impl App {
         let (conn, screen_num) =
             RustConnection::connect(None).context("could not connect to X11 display")?;
         let screen = &conn.setup().roots[screen_num];
-
-        let tray_visual = find_tray_visual(&conn, screen);
-        let (depth, visual, colormap) = match tray_visual {
-            Some((d, v)) => {
-                let cmap = conn.generate_id()?;
-                conn.create_colormap(ColormapAlloc::NONE, cmap, screen.root, v)?;
-                (d, v, Some(cmap))
-            }
-            None => (screen.root_depth, screen.root_visual, None),
-        };
-
-        let icon_window = conn.generate_id()?;
-        let mut aux = CreateWindowAux::new()
-            .background_pixel(COLOR_IDLE)
-            .override_redirect(1)
-            .event_mask(
-                EventMask::EXPOSURE | EventMask::BUTTON_PRESS | EventMask::STRUCTURE_NOTIFY,
-            );
-        if let Some(cmap) = colormap {
-            aux = aux.colormap(cmap).border_pixel(0);
-        }
-        conn.create_window(
-            depth,
-            icon_window,
-            screen.root,
-            0,
-            0,
-            ICON_SIZE,
-            ICON_SIZE,
-            0,
-            WindowClass::INPUT_OUTPUT,
-            visual,
-            &aux,
-        )?;
-
-        let xembed_info_atom = conn
-            .intern_atom(false, b"_XEMBED_INFO")?
+        let tray_atom = conn
+            .intern_atom(false, b"_NET_SYSTEM_TRAY_S0")?
             .reply()
-            .context("could not intern _XEMBED_INFO")?
+            .context("could not intern _NET_SYSTEM_TRAY_S0")?
             .atom;
-        conn.change_property32(
-            PropMode::REPLACE,
-            icon_window,
-            xembed_info_atom,
-            xembed_info_atom,
-            &[1, 1],
-        )?;
-        conn.change_property8(
-            PropMode::REPLACE,
-            icon_window,
-            AtomEnum::WM_CLASS,
-            AtomEnum::STRING,
-            b"hear-app\0Hear-app",
-        )?;
-        conn.change_property8(
-            PropMode::REPLACE,
-            icon_window,
-            AtomEnum::WM_NAME,
-            AtomEnum::STRING,
-            b"hear-app",
-        )?;
-        conn.flush()?;
-
-        request_dock(&conn, icon_window)?;
+        let tray_icon = create_tray_icon(&conn, screen, tray_atom)?;
+        let tray_owner = find_tray_owner(&conn, tray_atom)?;
+        if tray_owner == x11rb::NONE {
+            bail!(
+                "no system tray is running (no owner for _NET_SYSTEM_TRAY_S0). \
+                 Make sure your window manager has a systray enabled."
+            );
+        }
+        request_dock(&conn, tray_owner, tray_icon.window)?;
 
         let hotkey = config.hotkey;
         let manager = match GlobalHotKeyManager::new() {
@@ -147,7 +108,12 @@ impl App {
             job: None,
             paste_target: None,
             conn,
-            icon_window,
+            screen_num,
+            tray_atom,
+            tray_icon: Some(tray_icon),
+            tray_owner,
+            tray_needs_dock: false,
+            next_tray_recovery: Instant::now() + TRAY_RECOVERY_INTERVAL,
             state: State::Idle,
             paste: config.paste_automatically,
             config,
@@ -183,13 +149,28 @@ impl App {
                             self.toggle_paste();
                         }
                     }
-                    x11rb::protocol::Event::DestroyNotify(event)
-                        if event.window == self.icon_window =>
+                    x11rb::protocol::Event::MapNotify(event)
+                        if self.is_tray_window(event.window) =>
                     {
-                        return Ok(());
+                        self.tray_needs_dock = false;
+                    }
+                    x11rb::protocol::Event::UnmapNotify(event)
+                        if self.is_tray_window(event.window) =>
+                    {
+                        self.tray_needs_dock = true;
+                    }
+                    x11rb::protocol::Event::DestroyNotify(event)
+                        if self.is_tray_window(event.window) =>
+                    {
+                        self.discard_tray_icon();
                     }
                     _ => {}
                 }
+            }
+
+            if Instant::now() >= self.next_tray_recovery {
+                self.recover_tray_icon();
+                self.next_tray_recovery = Instant::now() + TRAY_RECOVERY_INTERVAL;
             }
 
             while let Ok(event) = GlobalHotKeyEvent::receiver().try_recv() {
@@ -278,12 +259,18 @@ impl App {
     }
 
     fn update_icon(&self) -> Result<()> {
+        let Some(icon) = &self.tray_icon else {
+            return Ok(());
+        };
         self.conn
-            .clear_area(false, self.icon_window, 0, 0, ICON_SIZE, ICON_SIZE)?;
+            .clear_area(false, icon.window, 0, 0, ICON_SIZE, ICON_SIZE)?;
         self.draw_icon()
     }
 
     fn draw_icon(&self) -> Result<()> {
+        let Some(icon) = &self.tray_icon else {
+            return Ok(());
+        };
         let color = match self.state {
             State::Idle => COLOR_IDLE,
             State::Recording(_) => COLOR_RECORDING,
@@ -292,12 +279,12 @@ impl App {
         let gc = self.conn.generate_id()?;
         self.conn.create_gc(
             gc,
-            self.icon_window,
+            icon.window,
             &CreateGCAux::new().foreground(color).line_width(2),
         )?;
         // Microphone capsule.
         self.conn.poly_fill_rectangle(
-            self.icon_window,
+            icon.window,
             gc,
             &[Rectangle {
                 x: 8,
@@ -307,7 +294,7 @@ impl App {
             }],
         )?;
         self.conn.poly_fill_arc(
-            self.icon_window,
+            icon.window,
             gc,
             &[
                 Arc {
@@ -331,7 +318,7 @@ impl App {
         // Pickup cradle and stand.
         self.conn.poly_line(
             CoordMode::ORIGIN,
-            self.icon_window,
+            icon.window,
             gc,
             &[
                 Point { x: 5, y: 8 },
@@ -346,7 +333,7 @@ impl App {
         )?;
         self.conn.poly_line(
             CoordMode::ORIGIN,
-            self.icon_window,
+            icon.window,
             gc,
             &[
                 Point { x: 11, y: 15 },
@@ -359,15 +346,127 @@ impl App {
         self.conn.flush()?;
         Ok(())
     }
+
+    fn is_tray_window(&self, window: Window) -> bool {
+        self.tray_icon
+            .as_ref()
+            .is_some_and(|icon| icon.window == window)
+    }
+
+    fn discard_tray_icon(&mut self) {
+        if let Some(icon) = self.tray_icon.take()
+            && let Some(colormap) = icon.colormap
+        {
+            let _ = self.conn.free_colormap(colormap);
+        }
+        self.tray_owner = x11rb::NONE;
+        self.tray_needs_dock = true;
+    }
+
+    fn recover_tray_icon(&mut self) {
+        if let Err(error) = self.try_recover_tray_icon() {
+            eprintln!("Could not recover tray icon: {error:#}");
+        }
+    }
+
+    fn try_recover_tray_icon(&mut self) -> Result<()> {
+        let tray_owner = find_tray_owner(&self.conn, self.tray_atom)?;
+        if tray_owner == x11rb::NONE {
+            self.tray_owner = x11rb::NONE;
+            return Ok(());
+        }
+
+        if self.tray_icon.is_none() {
+            let screen = &self.conn.setup().roots[self.screen_num];
+            self.tray_icon = Some(create_tray_icon(&self.conn, screen, self.tray_atom)?);
+            self.tray_needs_dock = true;
+        }
+
+        if tray_owner != self.tray_owner || self.tray_needs_dock {
+            let icon_window = self
+                .tray_icon
+                .as_ref()
+                .context("tray icon was not created")?
+                .window;
+            request_dock(&self.conn, tray_owner, icon_window)?;
+            self.tray_owner = tray_owner;
+            self.tray_needs_dock = false;
+            self.draw_icon()?;
+            eprintln!("Tray icon restored.");
+        }
+        Ok(())
+    }
 }
 
-fn find_tray_visual(conn: &RustConnection, screen: &Screen) -> Option<(u8, Visualid)> {
-    let tray_atom = conn
-        .intern_atom(false, b"_NET_SYSTEM_TRAY_S0")
-        .ok()?
+fn create_tray_icon(conn: &RustConnection, screen: &Screen, tray_atom: Atom) -> Result<TrayIcon> {
+    let tray_visual = find_tray_visual(conn, screen, tray_atom);
+    let (depth, visual, colormap) = match tray_visual {
+        Some((depth, visual)) => {
+            let colormap = conn.generate_id()?;
+            conn.create_colormap(ColormapAlloc::NONE, colormap, screen.root, visual)?;
+            (depth, visual, Some(colormap))
+        }
+        None => (screen.root_depth, screen.root_visual, None),
+    };
+
+    let window = conn.generate_id()?;
+    let mut aux = CreateWindowAux::new()
+        .background_pixel(COLOR_IDLE)
+        .override_redirect(1)
+        .event_mask(EventMask::EXPOSURE | EventMask::BUTTON_PRESS | EventMask::STRUCTURE_NOTIFY);
+    if let Some(colormap) = colormap {
+        aux = aux.colormap(colormap).border_pixel(0);
+    }
+    conn.create_window(
+        depth,
+        window,
+        screen.root,
+        0,
+        0,
+        ICON_SIZE,
+        ICON_SIZE,
+        0,
+        WindowClass::INPUT_OUTPUT,
+        visual,
+        &aux,
+    )?;
+
+    let xembed_info_atom = conn
+        .intern_atom(false, b"_XEMBED_INFO")?
         .reply()
-        .ok()?
+        .context("could not intern _XEMBED_INFO")?
         .atom;
+    conn.change_property32(
+        PropMode::REPLACE,
+        window,
+        xembed_info_atom,
+        xembed_info_atom,
+        &[1, 1],
+    )?;
+    conn.change_property8(
+        PropMode::REPLACE,
+        window,
+        AtomEnum::WM_CLASS,
+        AtomEnum::STRING,
+        b"hear-app\0Hear-app",
+    )?;
+    conn.change_property8(
+        PropMode::REPLACE,
+        window,
+        AtomEnum::WM_NAME,
+        AtomEnum::STRING,
+        b"hear-app",
+    )?;
+    conn.flush()?;
+
+    Ok(TrayIcon { window, colormap })
+}
+
+fn find_tray_visual(
+    conn: &RustConnection,
+    screen: &Screen,
+    tray_atom: Atom,
+) -> Option<(u8, Visualid)> {
     let visual_atom = conn
         .intern_atom(false, b"_NET_SYSTEM_TRAY_VISUAL")
         .ok()?
@@ -399,29 +498,19 @@ fn find_tray_visual(conn: &RustConnection, screen: &Screen) -> Option<(u8, Visua
     None
 }
 
-fn request_dock(conn: &RustConnection, icon_window: Window) -> Result<()> {
-    let tray_atom = conn
-        .intern_atom(false, b"_NET_SYSTEM_TRAY_S0")?
+fn find_tray_owner(conn: &RustConnection, tray_atom: Atom) -> Result<Window> {
+    conn.get_selection_owner(tray_atom)?
         .reply()
-        .context("could not intern _NET_SYSTEM_TRAY_S0")?
-        .atom;
+        .context("could not find the system tray")
+        .map(|reply| reply.owner)
+}
+
+fn request_dock(conn: &RustConnection, tray_owner: Window, icon_window: Window) -> Result<()> {
     let opcode_atom = conn
         .intern_atom(false, b"_NET_SYSTEM_TRAY_OPCODE")?
         .reply()
         .context("could not intern _NET_SYSTEM_TRAY_OPCODE")?
         .atom;
-
-    let tray_owner = conn
-        .get_selection_owner(tray_atom)?
-        .reply()
-        .context("could not find the system tray")?
-        .owner;
-    if tray_owner == x11rb::NONE {
-        bail!(
-            "no system tray is running (no owner for _NET_SYSTEM_TRAY_S0). \
-             Make sure your window manager has a systray enabled."
-        );
-    }
 
     conn.send_event(
         false,
