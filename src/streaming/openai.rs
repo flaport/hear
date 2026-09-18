@@ -297,8 +297,10 @@ mod tests {
                         if sizes.len() == 1 {
                             assert!(
                                 bytes
-                                    .chunks_exact(2)
-                                    .all(|b| i16::from_le_bytes([b[0], b[1]]) == 1000)
+                                    .as_chunks::<2>()
+                                    .0
+                                    .iter()
+                                    .all(|b| i16::from_le_bytes(*b) == 1000)
                             );
                             bytes.clear();
                         } else {

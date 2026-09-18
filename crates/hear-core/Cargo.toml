@@ -1,6 +1,6 @@
 [package]
 name = "hear-core"
-version = "0.5.1"
+version = "0.6.0"
 edition = "2024"
 license = "MIT"
 description = "Shared configuration, recording, and process support for hear"
