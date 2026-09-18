@@ -1,5 +1,5 @@
 mod audio;
-mod model;
+pub(crate) mod model;
 
 use std::path::Path;
 
@@ -52,7 +52,10 @@ pub fn transcribe(
     Ok(transcript.trim().to_owned())
 }
 
-fn resolve_language<'a>(model: &model::Model, language: &'a str) -> Result<Option<&'a str>> {
+pub(crate) fn resolve_language<'a>(
+    model: &model::Model,
+    language: &'a str,
+) -> Result<Option<&'a str>> {
     let language = language.trim();
     if language.is_empty() {
         bail!("Whisper language cannot be empty");

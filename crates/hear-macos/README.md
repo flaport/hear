@@ -62,6 +62,7 @@ polish_engine = ""
 polish_model = ""
 context = "auto"
 polish = true
+stream = false
 ```
 
 Empty engine values let the CLI infer an engine from its model options, and an
@@ -81,6 +82,27 @@ Whisper models are `tiny.en`, `base.en`, `small.en`, `medium.en`, and
 `large-v3-turbo`. Local polishing models are `qwen3.5-2b` (the default) and
 `qwen3.5-0.8b`. Fully local configurations do not access Keychain for an
 OpenAI API key.
+
+### Streaming trial
+
+To transcribe while recording, set `stream = true` in the same config file,
+then quit and reopen Hear. For OpenAI realtime:
+
+```toml
+[hear]
+engine = "gpt-transcribe"
+model = "gpt-live-transcribe"
+stream = true
+polish = true
+```
+
+For local Whisper, use `engine = "whisper"` and `model = "tiny.en"` with
+`stream = true`. Existing dictionary, polishing, output and paste settings apply.
+Option-X still starts/stops recording; the app pastes once after finalization and
+polishing. The recovery WAV is written in parallel. There is no menu switch.
+
+To restore the existing OpenAI file workflow, set `stream = false` and remove
+`model = "gpt-live-transcribe"` (or set `model = ""`), then restart Hear.
 
 ## Menu-bar visibility
 

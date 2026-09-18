@@ -66,6 +66,49 @@ pub fn run(
     timeout: Duration,
     forward: bool,
 ) -> Result<Output> {
+    run_input(
+        command,
+        input.map(Input::Bytes),
+        cancellation,
+        timeout,
+        forward,
+    )
+}
+
+pub fn run_streaming(
+    command: &mut Command,
+    input: crate::audio_stream::AudioReceiver,
+    cancellation: &Cancellation,
+    timeout: Duration,
+) -> Result<Output> {
+    run_input(
+        command,
+        Some(Input::Stream(input)),
+        cancellation,
+        timeout,
+        false,
+    )
+}
+
+enum Input {
+    Bytes(Vec<u8>),
+    Stream(crate::audio_stream::AudioReceiver),
+}
+
+struct StopWriter(Cancellation);
+impl Drop for StopWriter {
+    fn drop(&mut self) {
+        self.0.cancel();
+    }
+}
+
+fn run_input(
+    command: &mut Command,
+    input: Option<Input>,
+    cancellation: &Cancellation,
+    timeout: Duration,
+    forward: bool,
+) -> Result<Output> {
     let owns_group = std::env::var_os("HEAR_PROCESS_GROUP").is_none();
     #[cfg(unix)]
     if owns_group {
@@ -91,9 +134,32 @@ pub fn run(
     let stderr = child.child.stderr.take().context("missing helper stderr")?;
     let out = thread::spawn(move || drain(stdout, forward));
     let err = thread::spawn(move || drain(stderr, forward));
+    let writer_stop = StopWriter(Cancellation::default());
     let writer = input.map(|input| {
         let mut stdin = child.child.stdin.take().expect("piped stdin");
-        thread::spawn(move || stdin.write_all(&input))
+        let cancellation = cancellation.clone();
+        let stop = writer_stop.0.clone();
+        thread::spawn(move || -> std::io::Result<()> {
+            match input {
+                Input::Bytes(bytes) => stdin.write_all(&bytes),
+                Input::Stream(receiver) => loop {
+                    if cancellation.is_cancelled() {
+                        return Ok(());
+                    }
+                    if stop.is_cancelled() {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::BrokenPipe,
+                            "helper closed before audio input finished",
+                        ));
+                    }
+                    match receiver.recv_timeout(Duration::from_millis(20)) {
+                        Ok(bytes) => stdin.write_all(&bytes)?,
+                        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return Ok(()),
+                    }
+                },
+            }
+        })
     });
     let start = Instant::now();
     let mut exited = None;
@@ -107,6 +173,9 @@ pub fn run(
         if exited.is_none() {
             exited = child.child.try_wait()?;
         }
+        if exited.is_some() {
+            writer_stop.0.cancel();
+        }
         if let Some(status) = exited
             && out.is_finished()
             && err.is_finished()
@@ -117,9 +186,13 @@ pub fn run(
         thread::sleep(Duration::from_millis(20));
     };
     if let Some(writer) = writer {
-        writer
+        let result = writer
             .join()
-            .map_err(|_| anyhow::anyhow!("helper input thread panicked"))??;
+            .map_err(|_| anyhow::anyhow!("helper input thread panicked"))?;
+        // A failed helper can close stdin early; preserve its structured error.
+        if status.success() {
+            result?;
+        }
     }
     let stdout = out
         .join()
@@ -161,6 +234,56 @@ impl Drop for Job {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
+    #[test]
+    fn early_helper_failure_does_not_wait_for_more_microphone_audio() {
+        let (_sink, receiver, _) = crate::audio_stream::channel();
+        let output = run_streaming(
+            Command::new("sh").args(["-c", "exit 7"]),
+            receiver,
+            &Cancellation::default(),
+            Duration::from_secs(2),
+        )
+        .unwrap();
+        assert_eq!(output.status.code(), Some(7));
+    }
+    #[cfg(unix)]
+    #[test]
+    fn streaming_input_arrives_before_eof_and_cancellation_reaps_child() {
+        let directory = tempfile::tempdir().unwrap();
+        let marker = directory.path().join("received");
+        let (sink, receiver, _) = crate::audio_stream::channel();
+        let cancellation = Cancellation::default();
+        let signal = cancellation.clone();
+        let destination = marker.clone();
+        let worker = thread::spawn(move || {
+            run_streaming(
+                Command::new("sh")
+                    .args(["-c", "dd bs=2 count=1 of=\"$1\" 2>/dev/null; cat", "sh"])
+                    .arg(destination),
+                receiver,
+                &signal,
+                Duration::from_secs(5),
+            )
+        });
+        sink.send(vec![1, 2]);
+        let start = Instant::now();
+        while std::fs::read(&marker).unwrap_or_default() != [1, 2] {
+            assert!(start.elapsed() < Duration::from_secs(3));
+            thread::sleep(Duration::from_millis(10));
+        }
+        // The producer is still live, and the helper is waiting for more audio.
+        cancellation.cancel();
+        assert!(
+            worker
+                .join()
+                .unwrap()
+                .unwrap_err()
+                .to_string()
+                .contains("cancelled")
+        );
+        drop(sink);
+    }
     #[cfg(unix)]
     #[test]
     fn dropping_job_cancels_and_waits_for_helper() {

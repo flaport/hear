@@ -165,34 +165,88 @@ impl Workflow {
     pub fn run(&self, input: &Path) -> std::result::Result<Transcript, WorkflowError> {
         self.report(Stage::Validation);
         self.preflight(Some(input))?;
-        let mut stage = Stage::Recording;
-        let mut raw = None;
-        let mut text = None;
-        let result = (|| -> Result<()> {
-            if let Some(destination) = &self.config.save_recording {
-                hear_core::files::copy(input, destination, self.config.force)?;
-            }
-            stage = Stage::Transcription;
-            self.report(stage);
-            let vocabulary = self.dictionary.canonical_terms();
-            let mut client = self.client.clone();
-            let transcript = match self.config.resolved_engine() {
+        if self.config.stream {
+            return Err(WorkflowError::new(
+                Stage::Validation,
+                anyhow::anyhow!("use streaming PCM input for --stream, not an audio file"),
+            ));
+        }
+        if let Some(destination) = &self.config.save_recording {
+            hear_core::files::copy(input, destination, self.config.force)
+                .map_err(|e| WorkflowError::new(Stage::Recording, e))?;
+        }
+        self.report(Stage::Transcription);
+        let vocabulary = self.dictionary.canonical_terms();
+        let mut client = self.client.clone();
+        let mut transcribe = || -> Result<String> {
+            match self.config.resolved_engine() {
                 Engine::GptTranscribe => {
                     let openai = self.openai()?;
-                    let transcript = openai.transcribe_raw(input, &vocabulary)?;
+                    let text = openai.transcribe_raw(input, &vocabulary)?;
                     client = Some(openai);
-                    transcript
+                    Ok(text)
                 }
                 Engine::Codex => {
-                    engines::codex::transcribe(input, self.config.model.as_deref(), &vocabulary)?
+                    engines::codex::transcribe(input, self.config.model.as_deref(), &vocabulary)
                 }
                 Engine::Whisper => engines::whisper::transcribe(
                     input,
                     self.config.model.as_deref().unwrap_or("tiny.en"),
                     self.config.language.as_deref().unwrap_or("en"),
                     &vocabulary,
-                )?,
-            };
+                ),
+            }
+        };
+        let transcript = transcribe().map_err(|e| WorkflowError::new(Stage::Transcription, e))?;
+        self.finish_transcript(transcript, client.as_ref())
+    }
+
+    /// Consume mono PCM16 little-endian audio at 16 kHz until EOF, then polish once.
+    /// The caller owns capture, cancellation and recovery audio.
+    pub fn run_streaming(
+        &self,
+        input: impl std::io::Read,
+    ) -> std::result::Result<Transcript, WorkflowError> {
+        self.preflight(None)?;
+        if !self.config.stream {
+            return Err(WorkflowError::new(
+                Stage::Validation,
+                anyhow::anyhow!("stream must be enabled"),
+            ));
+        }
+        self.report(Stage::Transcription);
+        let client = if self.config.resolved_engine() == Engine::GptTranscribe {
+            Some(
+                self.openai()
+                    .map_err(|e| WorkflowError::new(Stage::Transcription, e))?,
+            )
+        } else {
+            self.client.clone()
+        };
+        let transcribe = || -> Result<String> {
+            let adapter = crate::streaming::adapter(
+                &self.config,
+                &self.dictionary.canonical_terms(),
+                client.as_ref(),
+            )?;
+            crate::streaming::transcribe(input, adapter)
+        };
+        let transcript = transcribe().map_err(|e| WorkflowError::new(Stage::Transcription, e))?;
+        self.finish_transcript(transcript, client.as_ref())
+    }
+
+    fn finish_transcript(
+        &self,
+        transcript: String,
+        client: Option<&OpenAiClient>,
+    ) -> std::result::Result<Transcript, WorkflowError> {
+        let mut stage = Stage::Transcription;
+        let mut raw = Some(transcript.clone());
+        let mut text = None;
+        let result = (|| -> Result<()> {
+            if transcript.trim().is_empty() {
+                bail!("no speech was transcribed");
+            }
             raw = Some(transcript);
             let corrected = self.dictionary.correct_aliases(raw.as_deref().unwrap())?;
             raw = Some(corrected.clone());
@@ -219,7 +273,7 @@ impl Workflow {
                     PolishEngine::Local => crate::polish_local_with_options(&corrected, &options)?,
                     // Keep client creation lazy: spoken Verbatim directives do not
                     // require a key even when OpenAI polishing is the default.
-                    PolishEngine::Openai => match &client {
+                    PolishEngine::Openai => match client {
                         Some(client) => client.polish(&corrected, &options)?,
                         None => crate::polish_with_options(&corrected, &options)?,
                     },

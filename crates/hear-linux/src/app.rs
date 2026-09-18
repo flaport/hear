@@ -193,7 +193,7 @@ impl App {
 
     fn toggle_recording(&mut self) {
         match std::mem::replace(&mut self.state, State::Transcribing) {
-            State::Idle => match self.config.hear.preflight().and_then(|_| Recorder::start()) {
+            State::Idle => match crate::recording::start(&self.config.hear) {
                 Ok(recorder) => {
                     self.paste_target = delivery::capture_target();
                     self.state = State::Recording(recorder);

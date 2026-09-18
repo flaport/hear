@@ -49,6 +49,9 @@ pub struct PendingRecording {
 }
 impl Recorder {
     pub fn start() -> Result<Self> {
+        Self::start_with_sink(None)
+    }
+    pub fn start_with_sink(sink: Option<crate::audio_stream::AudioSink>) -> Result<Self> {
         let device = cpal::default_host()
             .default_input_device()
             .context("no default microphone was found")?;
@@ -77,16 +80,32 @@ impl Recorder {
                 let mut writer = hound::WavWriter::create(&temporary, spec)?;
                 let mut resampler = Resampler::new(rate, 16000);
                 let mut count = 0_u64;
+                let mut packet_bytes = Vec::with_capacity(crate::audio_stream::PACKET_BYTES);
                 for packet in rx {
                     for sample in &packet.samples[..packet.len] {
                         resampler.push(*sample, |v| {
-                            writer.write_sample((v.clamp(-1.0, 1.0) * i16::MAX as f32) as i16)?;
+                            let sample = (v.clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
+                            writer.write_sample(sample)?;
+                            if let Some(sink) = &sink {
+                                packet_bytes.extend_from_slice(&sample.to_le_bytes());
+                                if packet_bytes.len() == crate::audio_stream::PACKET_BYTES {
+                                    sink.send(std::mem::replace(
+                                        &mut packet_bytes,
+                                        Vec::with_capacity(crate::audio_stream::PACKET_BYTES),
+                                    ));
+                                }
+                            }
                             count += 1;
                             Ok(())
                         })?;
                     }
                 }
                 writer.finalize()?;
+                if let Some(sink) = sink
+                    && !packet_bytes.is_empty()
+                {
+                    sink.send(packet_bytes);
+                }
                 if count == 0 {
                     bail!("the microphone recording contained no audio");
                 }
@@ -199,14 +218,15 @@ where
     )
 }
 /// Area resampling keeps constant signals and fractional sample-rate ratios stable.
-struct Resampler {
+pub struct Resampler {
     source: u64,
     target: u64,
     phase: u64,
     sum: f64,
 }
 impl Resampler {
-    fn new(source: u32, target: u32) -> Self {
+    pub fn new(source: u32, target: u32) -> Self {
+        assert!(source > 0 && target > 0);
         Self {
             source: source.into(),
             target: target.into(),
@@ -214,7 +234,7 @@ impl Resampler {
             sum: 0.0,
         }
     }
-    fn push(&mut self, v: f32, mut emit: impl FnMut(f32) -> Result<()>) -> Result<()> {
+    pub fn push(&mut self, v: f32, mut emit: impl FnMut(f32) -> Result<()>) -> Result<()> {
         let mut remaining = self.target;
         while remaining > 0 {
             let take = remaining.min(self.source - self.phase);

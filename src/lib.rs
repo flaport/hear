@@ -13,12 +13,7 @@ use anyhow::Result;
 pub use context::FormatContext;
 pub use openai_transport::{Error, OpenAiClient, OpenAiClientBuilder, ProgressEvent};
 
-/// Both stages of a transcription, allowing callers to retain or display either.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Transcript {
-    pub raw: String,
-    pub text: String,
-}
+pub use hear_core::helper::Transcript;
 
 /// Named options for transcript polishing.
 ///
@@ -272,3 +267,6 @@ pub use hear_core::{Engine, HearConfig, PolishEngine};
 pub use output::write_transcript;
 #[cfg(feature = "workflow")]
 pub use workflow::{Stage, Workflow, WorkflowError, WorkflowEvent};
+
+#[cfg(feature = "workflow")]
+pub mod streaming;

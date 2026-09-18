@@ -47,6 +47,49 @@ Supported OpenAI uploads up to 25 MB are sent directly. Other formats are
 converted with FFmpeg; oversized uploads are compressed and split into
 45-minute MP3 parts.
 
+## Streaming microphone transcription
+
+`--stream` implies `--record`: transcription begins while you speak. Press Return
+to finish, then Hear polishes and delivers the completed transcript once.
+
+```sh
+# OpenAI realtime (requires OPENAI_API_KEY)
+hear --stream --engine gpt-transcribe --model gpt-live-transcribe
+
+# Local Whisper transcription; add --polish-engine local for local polishing
+hear --stream --engine whisper --model tiny.en
+
+# Compare transcription latency without polishing, and retain the test recording
+hear --stream --model tiny.en --no-polish --save-recording trial.wav
+```
+
+With `--stream`, the OpenAI engine defaults to `gpt-live-transcribe`; ordinary
+file transcription and `--record` continue to use `gpt-transcribe`. These are
+different models with different pricing and accuracy. OpenAI sends PCM through
+a realtime WebSocket and commits bounded turns during long dictations. Local
+Whisper keeps its model loaded for the recording and processes rolling windows,
+retaining unfinished audio for the next window. Streaming can change accuracy;
+compare the result with `hear trial.wav --model tiny.en --no-polish`.
+
+`--stream` conflicts with an audio-file argument and does not support Codex.
+Explicit `--record --stream` is accepted. Audio is also saved to a recovery WAV;
+connection errors or a full audio queue fail instead of delivering a truncated
+transcript. Failed recordings can be retried with the ordinary file workflow.
+First-use model downloads may exceed the streaming queue's 30-second headroom;
+prepare a Whisper model with a file transcription before a long first recording.
+Polishing still runs after recording stops. The desktop apps use `stream = true`
+inside their existing `[hear]` configuration and must be restarted after edits.
+
+OpenAI's realtime protocol is documented at
+https://developers.openai.com/api/docs/guides/realtime-transcription.
+
+Library users with the `workflow` feature can call `Workflow::run_streaming`
+with a reader of mono PCM16 little-endian audio at 16 kHz. Set `HearConfig.stream`
+to `true`; the caller owns capture, cancellation and saving recovery audio.
+Adapters share the `hear::streaming::Adapter` interface. Desktop companions send
+PCM to an isolated helper process so cancellation can stop native inference or
+network operations without blocking the microphone callback.
+
 ## Local transcription and polishing
 
 ```sh

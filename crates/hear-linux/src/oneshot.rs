@@ -1,4 +1,4 @@
-use crate::{config::Config, recording::Recorder};
+use crate::config::Config;
 use anyhow::{Context, Result, bail};
 use std::{
     fs::{self, File, OpenOptions},
@@ -106,7 +106,7 @@ pub fn run() -> Result<()> {
         signal_hook::flag::register(signal, cancel.clone())?;
     }
     let target = crate::delivery::capture_target();
-    let recorder = Recorder::start()?;
+    let recorder = crate::recording::start(&config.hear)?;
     eprintln!("Recording… (run `hear-app oneshot` again to stop)");
     loop {
         if cancel.load(Ordering::Relaxed) {
@@ -120,7 +120,7 @@ pub fn run() -> Result<()> {
         }
         std::thread::sleep(Duration::from_millis(50));
     }
-    let mut recording = hear_core::helper::Recording::new(recorder.finish()?);
+    let pending = recorder.stop();
     let cancellation = hear_core::process::Cancellation::default();
     let done = Arc::new(AtomicBool::new(false));
     let finished = done.clone();
@@ -134,11 +134,16 @@ pub fn run() -> Result<()> {
             std::thread::sleep(Duration::from_millis(50));
         }
     });
-    let result = crate::transcriber::run(&recording, &config.hear, &cancellation);
+    let result = pending.transcribe(
+        &config.hear,
+        crate::transcriber::helper_path(),
+        crate::credentials::stored_api_key,
+        &cancellation,
+    );
     done.store(true, Ordering::Relaxed);
     let _ = watcher.join();
-    let transcript = result?;
-    recording.remember_transcript(&transcript);
+    let (transcript, recording) = result?;
+    let transcript = transcript.text;
     if crate::delivery::deliver(
         &transcript,
         config.paste_automatically,

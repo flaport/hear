@@ -9,11 +9,11 @@ use sha2::{Digest, Sha256};
 const MODEL_REVISION: &str = "5359861c739e955e79d9a303bcbc70fb988958b1";
 const MODEL_BASE_URL: &str = "https://huggingface.co/ggerganov/whisper.cpp/resolve";
 
-pub(super) struct Model {
-    pub(super) name: &'static str,
+pub(crate) struct Model {
+    pub(crate) name: &'static str,
     bytes: u64,
     sha256: &'static str,
-    pub(super) multilingual: bool,
+    pub(crate) multilingual: bool,
 }
 
 impl Model {
@@ -55,7 +55,7 @@ const MODELS: &[Model] = &[
     },
 ];
 
-pub(super) fn find(name: &str) -> Result<&'static Model> {
+pub(crate) fn find(name: &str) -> Result<&'static Model> {
     MODELS.iter().find(|model| model.name == name).ok_or_else(|| {
         anyhow::anyhow!(
             "unknown Whisper model '{name}'; choose tiny.en, base.en, small.en, medium.en, or large-v3-turbo"
@@ -63,7 +63,7 @@ pub(super) fn find(name: &str) -> Result<&'static Model> {
     })
 }
 
-pub(super) fn ensure(model: &Model) -> Result<PathBuf> {
+pub(crate) fn ensure(model: &Model) -> Result<PathBuf> {
     let base = BaseDirs::new().context("could not determine the platform cache directory")?;
     let directory = base.cache_dir().join("hear").join("models");
     let filename = model.filename();

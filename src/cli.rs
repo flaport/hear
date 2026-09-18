@@ -43,6 +43,7 @@ pub enum DictionaryCommand {
 
 #[derive(Debug, Parser)]
 #[command(version, about)]
+#[command(group(clap::ArgGroup::new("capture").args(["record", "stream"]).multiple(true)))]
 pub struct Cli {
     /// Machine-readable helper result, including partial failures.
     #[arg(long, hide = true)]
@@ -58,8 +59,16 @@ pub struct Cli {
     #[arg(long, conflicts_with = "input")]
     pub record: bool,
 
+    /// Record and transcribe while speaking (implies --record).
+    #[arg(long, conflicts_with = "input")]
+    pub stream: bool,
+
+    /// Internal helper transport: mono PCM16 LE at 16 kHz until EOF.
+    #[arg(long, hide = true, requires = "stream", conflicts_with_all = ["input", "record", "save_recording"])]
+    pub pcm_stdin: bool,
+
     /// Keep a recording at this location instead of deleting it afterward.
-    #[arg(long, value_name = "PATH", requires = "record")]
+    #[arg(long, value_name = "PATH", requires = "capture")]
     pub save_recording: Option<PathBuf>,
 
     /// Engine; inferred from --model or --language, otherwise gpt-transcribe.
@@ -69,7 +78,7 @@ pub struct Cli {
     /// Model for the selected transcription engine.
     ///
     /// Whisper models: tiny.en (default), base.en, small.en, medium.en, and
-    /// large-v3-turbo. Codex accepts a model supported by `codex exec`.
+    /// large-v3-turbo. OpenAI --stream uses gpt-live-transcribe. Codex accepts a model supported by `codex exec`.
     #[arg(long, value_name = "MODEL")]
     pub model: Option<String>,
 
@@ -121,6 +130,8 @@ impl Cli {
             if self.json
                 || self.input.is_some()
                 || self.record
+                || self.stream
+                || self.pcm_stdin
                 || self.save_recording.is_some()
                 || self.engine.is_some()
                 || self.model.is_some()
@@ -138,8 +149,8 @@ impl Cli {
             }
             return Ok(());
         }
-        if !self.record && self.input.is_none() {
-            bail!("provide an audio file or use --record");
+        if !self.record && !self.stream && self.input.is_none() {
+            bail!("provide an audio file or use --record / --stream");
         }
         self.hear_config().validate()?;
         hear_core::files::ensure_distinct(&[
@@ -158,6 +169,7 @@ impl Cli {
     pub fn hear_config(&self) -> hear_core::HearConfig {
         hear_core::HearConfig {
             engine: self.engine,
+            stream: self.stream,
             model: self.model.clone(),
             language: self.language.clone(),
             polish_engine: self.polish_engine,
@@ -175,6 +187,32 @@ impl Cli {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stream_implies_record_and_accepts_saved_audio_without_record_flag() {
+        for args in [
+            vec!["hear", "--stream", "--model", "tiny.en"],
+            vec!["hear", "--record", "--stream", "--model", "tiny.en"],
+            vec!["hear", "--stream", "--save-recording", "saved.wav"],
+            vec![
+                "hear",
+                "--stream",
+                "--engine",
+                "gpt-transcribe",
+                "--model",
+                "gpt-live-transcribe",
+            ],
+        ] {
+            let cli = Cli::try_parse_from(args).unwrap();
+            cli.validate().unwrap();
+            assert!(cli.hear_config().stream);
+        }
+        assert!(Cli::try_parse_from(["hear", "--stream", "audio.wav"]).is_err());
+        assert!(Cli::try_parse_from(["hear", "--pcm-stdin"]).is_err());
+        assert!(Cli::try_parse_from(["hear", "--stream", "--pcm-stdin", "--record"]).is_err());
+        let cli = Cli::try_parse_from(["hear", "--stream", "--engine", "codex"]).unwrap();
+        assert!(cli.validate().is_err());
+    }
 
     #[test]
     fn defaults_to_gpt_transcribe() {

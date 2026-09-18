@@ -48,6 +48,7 @@ pub struct HearConfig {
     pub polish_model: Option<String>,
     pub context: FormatContext,
     pub polish: bool,
+    pub stream: bool,
     #[serde(deserialize_with = "optional")]
     pub save_recording: Option<PathBuf>,
     #[serde(deserialize_with = "optional")]
@@ -66,6 +67,7 @@ impl Default for HearConfig {
             polish_model: None,
             context: FormatContext::Auto,
             polish: true,
+            stream: false,
             save_recording: None,
             output: None,
             raw_output: None,
@@ -90,7 +92,10 @@ where
 impl HearConfig {
     pub fn resolved_engine(&self) -> Engine {
         self.engine.unwrap_or_else(|| {
-            if self.language.is_some() || self.model.as_deref().is_some_and(is_whisper_model) {
+            if self.stream && self.model.as_deref() == Some("gpt-live-transcribe") {
+                Engine::GptTranscribe
+            } else if self.language.is_some() || self.model.as_deref().is_some_and(is_whisper_model)
+            {
                 Engine::Whisper
             } else if self.model.is_some() {
                 Engine::Codex
@@ -125,12 +130,27 @@ impl HearConfig {
         self.output.as_deref()
     }
     pub fn validate(&self) -> Result<()> {
-        if self.model.is_some() && self.resolved_engine() == Engine::GptTranscribe {
-            bail!("--model is only valid with codex or whisper");
+        if self.stream && self.resolved_engine() == Engine::Codex {
+            bail!("streaming is supported with whisper or gpt-transcribe, not codex");
+        }
+        if self.resolved_engine() == Engine::GptTranscribe {
+            if self.stream {
+                if self
+                    .model
+                    .as_deref()
+                    .is_some_and(|m| m != "gpt-live-transcribe")
+                {
+                    bail!("OpenAI streaming requires --model gpt-live-transcribe");
+                }
+            } else if self.model.is_some() {
+                bail!("--model is only valid with codex, whisper, or OpenAI --stream");
+            }
         }
         if self.engine.is_none()
             && self.language.is_none()
-            && self.model.as_deref().is_some_and(|m| !is_whisper_model(m))
+            && self.model.as_deref().is_some_and(|m| {
+                !(is_whisper_model(m) || self.stream && m == "gpt-live-transcribe")
+            })
         {
             bail!(
                 "unrecognized transcription model; specify --engine codex explicitly for a Codex model"
@@ -188,6 +208,9 @@ impl HearConfig {
     }
     pub fn arguments(&self) -> Vec<std::ffi::OsString> {
         let mut args = Vec::new();
+        if self.stream {
+            args.push("--stream".into());
+        }
         macro_rules! arg {
             ($flag:literal, $value:expr) => {
                 if let Some(value) = $value {
@@ -231,6 +254,31 @@ pub fn is_local_polish_model(m: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn streaming_config_matches_cli_and_rejects_unsupported_combinations() {
+        for source in [
+            "stream=true\nengine='whisper'\nmodel='tiny.en'",
+            "stream=true\nengine='gpt-transcribe'\nmodel='gpt-live-transcribe'",
+            "stream=true\nmodel='gpt-live-transcribe'",
+        ] {
+            let config: HearConfig = toml::from_str(source).unwrap();
+            config.validate().unwrap();
+            assert!(config.arguments().contains(&"--stream".into()));
+        }
+        for source in [
+            "stream=true\nengine='codex'",
+            "stream=false\nengine='gpt-transcribe'\nmodel='gpt-live-transcribe'",
+            "stream=true\nengine='gpt-transcribe'\nmodel='wrong'",
+        ] {
+            assert!(
+                toml::from_str::<HearConfig>(source)
+                    .unwrap()
+                    .validate()
+                    .is_err()
+            );
+        }
+        assert!(!HearConfig::default().stream);
+    }
     #[test]
     fn legacy_config_and_verbatim_credentials() {
         let c: HearConfig = toml::from_str(

@@ -74,7 +74,7 @@ fn run(cli: &Cli) -> Result<Option<Completed>, WorkflowError> {
     }
     let config = cli.hear_config();
     let engine = config.resolved_engine();
-    let workflow = Workflow::new(config)
+    let workflow = Workflow::new(config.clone())
         .dictionary(Dictionary::load().map_err(validation)?)
         .progress(move |event| match event {
             WorkflowEvent::Stage(Stage::Transcription) => {
@@ -92,6 +92,27 @@ fn run(cli: &Cli) -> Result<Option<Completed>, WorkflowError> {
             _ => {}
         });
     workflow.preflight(cli.input.as_deref())?;
+    if cli.pcm_stdin {
+        return workflow
+            .run_streaming(io::stdin().lock())
+            .map(|transcript| {
+                Some(Completed {
+                    transcript,
+                    recording: None,
+                })
+            });
+    }
+    if cli.stream {
+        return audio::record_stream(&config)
+            .map(|result| {
+                result.map(|(transcript, recording)| Completed {
+                    transcript,
+                    recording: Some(recording),
+                })
+            })
+            .map_err(|error| WorkflowError::new(Stage::Transcription, error));
+    }
+
     let mut recording = if cli.record {
         match audio::record().map_err(|error| WorkflowError::new(Stage::Recording, error))? {
             audio::RecordingOutcome::Completed(path) => Some(Recording::new(path)),

@@ -63,6 +63,7 @@ polish_engine = ""
 polish_model = ""
 context = "auto"
 polish = true
+stream = false
 save_recording = ""
 output = ""
 raw_output = ""
@@ -92,6 +93,24 @@ polish_model = "qwen3.5-0.8b"
 
 Audio capture remains app-owned and is always enabled when the hotkey is used.
 Paste shortcut overrides use X11 window classes and `xdotool` shortcut syntax.
+
+### Streaming trial
+
+Both tray recording and `hear-app oneshot` accept `stream = true` under `[hear]`.
+Restart the tray app after editing its config. OpenAI realtime configuration:
+
+```toml
+[hear]
+engine = "gpt-transcribe"
+model = "gpt-live-transcribe"
+stream = true
+```
+
+For local Whisper, select `engine = "whisper"` and `model = "tiny.en"` instead.
+Audio is processed while speaking and also saved to a recovery WAV. Finishing
+recording finalizes the transcript, applies the existing polishing settings and
+pastes once. Streaming errors retain the audio for retry. To restore OpenAI file
+transcription, set `stream = false` and remove the realtime `model`, then restart.
 
 ## Clipboard and automatic paste
 
