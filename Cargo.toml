@@ -7,8 +7,9 @@ license = "MIT"
 
 [features]
 default = ["cli"]
-cli = ["workflow", "tts", "hear-core/cli", "dep:clap", "dep:ctrlc"]
+cli = ["workflow", "tts", "pocket-tts", "hear-core/cli", "dep:clap", "dep:ctrlc"]
 tts = ["dep:hound"]
+pocket-tts = ["tts", "dep:ptts", "dep:xn", "dep:rayon", "dep:safetensors", "dep:directories", "dep:sha2"]
 workflow = ["capture", "local-polish", "dep:directories", "dep:hound", "dep:regex", "dep:sha2", "dep:whisper-rs", "dep:tungstenite", "dep:base64"]
 capture = ["hear-core/capture"]
 local-polish = ["dep:hear-local-polish"]
@@ -19,6 +20,10 @@ path = "src/main.rs"
 required-features = ["cli"]
 
 [dependencies]
+ptts = { git = "https://github.com/gradium-ai/xn-ptts", rev = "b2aa0282a49519b3bada573e6b69d919ce697d76", default-features = false, features = ["hf"], optional = true }
+xn = { version = "=0.2.4", default-features = false, optional = true }
+rayon = { version = "1.11", optional = true }
+safetensors = { version = "0.7", optional = true }
 hear-local-polish = { version = "0.6.0", path = "crates/hear-local-polish", optional = true }
 hear-core = { version = "0.6.0", path = "crates/hear-core" }
 anyhow = "1.0"

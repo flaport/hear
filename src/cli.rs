@@ -8,7 +8,7 @@ pub use hear_core::{Engine, PolishEngine};
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Synthesize speech with OpenAI.
+    /// Synthesize speech with OpenAI or local Pocket TTS.
     Speak(crate::speech_cli::SpeakArgs),
     /// Manage words and names that should be transcribed consistently.
     Dictionary {
@@ -207,7 +207,11 @@ mod tests {
         let Some(Command::Speak(args)) = cli.command else {
             panic!("expected speak")
         };
-        assert_eq!(args.voice, "cedar");
+        assert_eq!(args.voice, None);
+        assert!(matches!(
+            args.engine,
+            crate::speech_cli::SpeechProvider::Openai
+        ));
         assert!(args.play);
         let cli = Cli::try_parse_from([
             "hear",
@@ -223,11 +227,22 @@ mod tests {
         let Some(Command::Speak(args)) = cli.command else {
             panic!("expected speak")
         };
-        assert_eq!(args.voice, "marin");
+        assert_eq!(args.voice.as_deref(), Some("marin"));
         assert_eq!(
             args.output.as_deref(),
             Some(std::path::Path::new("hello.wav"))
         );
+        let cli = Cli::try_parse_from(["hear", "speak", "Hello", "--engine", "pocket"]).unwrap();
+        cli.validate().unwrap();
+        let Some(Command::Speak(args)) = cli.command else {
+            panic!("expected speak")
+        };
+        assert!(matches!(
+            args.engine,
+            crate::speech_cli::SpeechProvider::Pocket
+        ));
+        assert!(args.voice.is_none());
+        assert!(args.model.is_none());
         let cli = Cli::try_parse_from(["hear", "--no-polish", "speak", "Hello"]).unwrap();
         assert!(cli.validate().is_err());
     }

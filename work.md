@@ -30,7 +30,11 @@ At the user's request, implement Stage 2 before Stage 1's timing work. OpenAI
 `gpt-4o-mini-tts` is the first engine, with Cedar as the default and a per-call
 voice override. Kokoro, Pocket TTS, and Piper have been auditioned and benchmarked
 on Linux (see `docs/tts-comparison.md`). The user selected Pocket TTS as the
-preferred local engine. Its backend integration is the next local TTS task.
+preferred local engine. Native Pocket TTS is now integrated behind the separate
+`pocket-tts` feature and `hear speak --engine pocket`, defaulting to Alba. The
+September model and voice caches are verified and downloaded once; Python is
+not required. Streaming SDK output works; native streaming playback remains
+Stage 3/5 work.
 
 Stage 2 now provides `hear::speech` behind the independent `tts` feature,
 `hear speak`, and the synthesis-only `speak` example. The audio contract is mono

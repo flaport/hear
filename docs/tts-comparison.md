@@ -2,8 +2,9 @@
 
 OpenAI is implemented first, using `gpt-4o-mini-tts` and Cedar by default. The
 user auditioned Marin, Cedar, Coral, and Ash and chose Cedar. `--voice` and the
-SDK's `SpeechRequest.voice` override the default. Local engines are experiments,
-not dependencies of Hear or implemented Hear backends yet.
+SDK's `SpeechRequest.voice` override the default. The local auditions below used
+separate Python environments. Pocket TTS is now integrated natively into Hear;
+Kokoro and Piper remain experiments.
 
 ## Method
 
@@ -32,8 +33,8 @@ outside the repository, under `~/.cache/hear/tts-comparison/` on the test machin
 ## Results
 
 The user selected **Pocket TTS as the preferred local voice** after hearing all
-three local samples. Cedar is the selected OpenAI voice. Pocket is the first
-candidate for local integration; this change implements only the OpenAI backend.
+three local samples. Cedar is the selected OpenAI voice. Pocket was selected for local integration and is now available as
+`hear speak --engine pocket`. The table below records the original Python audition.
 
 Warmed-up local trials (runs 2–3):
 
@@ -61,6 +62,30 @@ Kokoro and Pocket also downloaded weights during their initial setup. Piper's
 model was downloaded beforehand. Setup times are therefore not comparable.
 The installed CPU Torch version was 2.14.0+cpu, with Python 3.14.2. Auditions used
 trial 2 from the three engines' default configurations.
+
+## Native integration verification
+
+Hear now embeds `ptts` from `gradium-ai/xn-ptts` at
+`b2aa0282a49519b3bada573e6b69d919ce697d76`, with `xn` 0.2.4. The adapter uses the
+September 2026 model and precomputed voice KV states from the Python audition,
+including the already-applied voice/BOS conditioning. Only the unused voice
+encoder/projection path is omitted. Model, tokenizer, and voice assets have pinned
+revisions, sizes, and SHA-256 hashes in `src/speech/pocket/assets.rs`.
+
+A native prototype generated the common sample in 2.34 seconds with first PCM at
+0.101 seconds, yielding 91 chunks and 7.28 seconds of speech (model loading excluded;
+one trial, two CPU threads). This is a smoke measurement, not a repeated benchmark.
+The full CLI was tested with the API key removed, a fresh model download, and then
+with unreachable HTTP proxies to verify cached offline operation. A Ctrl-C test
+exited with status 130 in 0.04 seconds after the signal and preserved an existing
+output file. The real-model SDK test checks first-chunk cancellation, subsequent
+reuse of the same engine, and a sink failure. Those checks passed.
+
+CLI calls load the model per process, so their first-audio timing includes loading
+and any initial downloads. SDK consumers can keep `PocketSpeech` alive for reuse.
+`--play` still plays the completed WAV; direct streaming playback is separate work.
+
+Native runtime source: https://github.com/gradium-ai/xn-ptts
 
 ## Reproduce
 

@@ -228,6 +228,64 @@ Failures and cancellation emit their own terminal event. Metadata reports first
 PCM arrival, total synthesis time, and audio duration; first PCM is not first sound.
 The `speak` example builds with only `--no-default-features --features tts`.
 
+### Native Pocket TTS
+
+Pocket TTS runs inside Hear's Rust binary on CPU, with Alba as its default voice:
+
+```sh
+hear speak "Hello from my local voice." --engine pocket --play
+hear speak "A saved message." --engine pocket --voice alba --output local.wav
+printf 'Read this locally.' | hear speak - --engine pocket --play
+```
+
+No Python, separate server, or API key is needed. First use downloads about 225 MB
+of pinned model/tokenizer/Alba files. Hear verifies sizes and SHA-256 hashes and
+publishes downloads atomically. Later calls use the cache offline. On Linux this
+is `~/.cache/hear/pocket/english_2026-09/`; macOS uses the platform cache directory.
+Additional voices download their own small voice-state file when selected.
+
+Supported voices: `alba`, `marius`, `javert`, `jean`, `fantine`, `cosette`,
+`eponine`, `azelma`. This backend uses the English September 2026 model; it rejects
+other models, delivery instructions, and speeds other than 1.0. Text is limited
+to 4096 characters and 512 tokens per sentence. CLI playback waits for the WAV
+file to finish, just as it does for OpenAI. The desktop UI has no speech controls.
+
+For the local SDK without transcription or microphone dependencies:
+
+```toml
+hear = { git = "https://github.com/flaport/hear", branch = "main", default-features = false, features = ["pocket-tts"] }
+```
+
+```rust,no_run
+use hear::speech::{Cancellation, PocketSpeech, SpeechRequest, synthesize_to_wav};
+
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+let engine = PocketSpeech::new()?;
+synthesize_to_wav(
+    &engine,
+    &SpeechRequest::pocket("Hello from Hear."),
+    std::path::Path::new("hello.wav"),
+    false,
+    &Cancellation::default(),
+)?;
+# Ok(())
+# }
+```
+
+Keep `engine` alive to reuse loaded weights and voices. `SpeechEngine::synthesize`
+delivers PCM incrementally, with cancellation checks between inference frames and
+sink calls. Tensor work uses a private two-thread pool; sinks and observers run
+on the calling thread. Model loading and individual tensor operations cannot be
+interrupted; individual download network waits are bounded to 10 seconds.
+First-audio timing includes any initial downloads, loading, and waiting for a
+concurrent call on the same engine. Warm calls avoid that setup. Speech synthesis
+completion remains separate from playback completion.
+
+The backend uses the native `ptts`/`xn` libraries at pinned versions. Hear adapts
+the September checkpoint's precomputed voice caches directly, so it uses the same
+model and voice files as the Python audition. No Python conversion runs at build
+time or runtime. See `docs/tts-comparison.md` for the recorded comparison.
+
 ## Rust library
 
 The library exposes the CLI's recording, transcription, dictionary, polishing,
@@ -271,6 +329,7 @@ For smaller builds, disable default features and choose only what you need:
 | `local-polish` | OpenAI APIs and local polishing |
 | `workflow` | All engines, recording, dictionary, and file output |
 | `tts` | OpenAI speech synthesis, PCM sinks, and WAV output |
+| `pocket-tts` | Native local Pocket TTS plus the `tts` APIs |
 | `cli` (default) | Complete library and CLI binary |
 
 The minimal build omits microphone and native inference dependencies.

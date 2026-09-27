@@ -1,16 +1,29 @@
-use clap::Args;
-use hear::speech::{Cancellation, OpenAiSpeech, SpeechRequest, synthesize_to_wav};
+use clap::{Args, ValueEnum};
+use hear::speech::{
+    Cancellation, OpenAiSpeech, PocketSpeech, SpeechEngine, SpeechRequest, synthesize_to_wav,
+};
 use std::{io::Read, path::PathBuf, time::Duration};
+
+#[derive(Debug, Clone, Copy, Default, ValueEnum)]
+pub enum SpeechProvider {
+    #[default]
+    Openai,
+    Pocket,
+}
 
 #[derive(Debug, Args)]
 pub struct SpeakArgs {
     /// Text to speak, or - to read UTF-8 text from stdin (up to 4096 characters).
     pub text: String,
-    /// OpenAI voice.
-    #[arg(long, default_value = "cedar")]
-    pub voice: String,
-    #[arg(long, default_value = "gpt-4o-mini-tts")]
-    pub model: String,
+    /// Speech engine: OpenAI cloud or Pocket native CPU.
+    #[arg(long, value_enum, default_value = "openai")]
+    pub engine: SpeechProvider,
+    /// Voice (OpenAI: cedar; Pocket: alba).
+    #[arg(long)]
+    pub voice: Option<String>,
+    /// Model (OpenAI: gpt-4o-mini-tts; Pocket: english_2026-09).
+    #[arg(long)]
+    pub model: Option<String>,
     #[arg(long, default_value_t = 1.0)]
     pub speed: f32,
     /// Delivery instructions, such as "Speak warmly and slowly".
@@ -55,20 +68,29 @@ pub fn run(args: &SpeakArgs, cancellation: &Cancellation) -> anyhow::Result<()> 
             PathBuf::from("speech.wav")
         }
     });
+    let defaults = match args.engine {
+        SpeechProvider::Openai => SpeechRequest::new(&text),
+        SpeechProvider::Pocket => SpeechRequest::pocket(&text),
+    };
     let request = SpeechRequest {
         text: &text,
-        voice: &args.voice,
-        model: &args.model,
+        voice: args.voice.as_deref().unwrap_or(defaults.voice),
+        model: args.model.as_deref().unwrap_or(defaults.model),
         speed: args.speed,
         instructions: args.instructions.as_deref(),
     };
-    let summary = synthesize_to_wav(
-        &OpenAiSpeech::from_env()?,
-        &request,
-        &output,
-        args.force,
-        cancellation,
-    )?;
+    hear_core::files::preflight(&output, args.force)?;
+    let engine: Box<dyn SpeechEngine> = match args.engine {
+        SpeechProvider::Openai => Box::new(OpenAiSpeech::from_env()?),
+        SpeechProvider::Pocket => {
+            PocketSpeech::validate(&request)?;
+            eprintln!(
+                "Preparing Pocket TTS; missing model and voice files download on first use..."
+            );
+            Box::new(PocketSpeech::new()?)
+        }
+    };
+    let summary = synthesize_to_wav(engine.as_ref(), &request, &output, args.force, cancellation)?;
     eprintln!(
         "Generated {:.2}s of speech with {} in {:.2}s (first audio {:.2}s).",
         summary.audio_duration.as_secs_f64(),

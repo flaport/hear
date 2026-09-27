@@ -1,14 +1,19 @@
-//! Blocking speech synthesis, independent of capture and native inference.
+//! Blocking speech synthesis, independent of microphone capture.
 //!
 //! Audio sinks receive ordered mono PCM16 samples at 24 kHz. Run synthesis on a
 //! worker thread; sinks and observers run synchronously there, never on an audio
 //! callback. Completion means delivery to the sink, not audible playback.
-//! Cancellation is checked between reads and sink calls. In-flight HTTP waits
-//! are bounded by the engine's total request timeout (60 seconds by default);
-//! sink/observer implementations must bound their own blocking operations.
+//! Cancellation is checked between reads, inference frames, and sink calls.
+//! OpenAI requests have a configurable total timeout (60 seconds by default).
+//! Pocket's loading and download limits are documented on `PocketSpeech`.
+//! Sinks and observers must bound their own blocking operations.
 mod openai;
+#[cfg(feature = "pocket-tts")]
+mod pocket;
 pub use hear_core::process::Cancellation;
 pub use openai::OpenAiSpeech;
+#[cfg(feature = "pocket-tts")]
+pub use pocket::{POCKET_MODEL, POCKET_VOICE, POCKET_VOICES, PocketSpeech};
 
 use std::{
     io::{Seek, Write},
@@ -70,6 +75,7 @@ pub enum SpeechError {
     Configuration(String),
     OpenAi(crate::Error),
     Network(std::io::Error),
+    Local(anyhow::Error),
     Decode(String),
     Output(anyhow::Error),
     Cancelled,
@@ -79,6 +85,7 @@ impl std::fmt::Display for SpeechError {
         match self {
             Self::Configuration(s) => write!(f, "invalid speech request: {s}"),
             Self::OpenAi(e) => write!(f, "{e}"),
+            Self::Local(e) => write!(f, "local speech failed: {e:#}"),
             Self::Network(e) => write!(f, "speech audio transfer failed: {e}"),
             Self::Decode(s) => write!(f, "invalid speech audio: {s}"),
             Self::Output(e) => write!(f, "speech output failed: {e:#}"),
@@ -91,7 +98,7 @@ impl std::error::Error for SpeechError {
         match self {
             Self::OpenAi(e) => Some(e),
             Self::Network(e) => Some(e),
-            Self::Output(e) => Some(e.as_ref()),
+            Self::Output(e) | Self::Local(e) => Some(e.as_ref()),
             _ => None,
         }
     }
