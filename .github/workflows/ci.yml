@@ -45,6 +45,9 @@ jobs:
       - name: Check independent library consumer
         run: tests/check-library-consumer.sh
 
+      - name: Test synthesis-only library
+        run: tests/check-tts-only.sh
+
       - name: Test minimal library
         run: cargo test --locked --no-default-features --lib
 

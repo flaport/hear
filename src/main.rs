@@ -2,6 +2,7 @@ mod audio;
 mod cli;
 mod dictionary_cli;
 mod live;
+mod speech_cli;
 
 use std::io::{self, Write};
 
@@ -18,6 +19,19 @@ struct Completed {
 
 fn main() {
     let cli = Cli::parse();
+    if let Some(Command::Speak(args)) = &cli.command {
+        let cancellation = hear::speech::Cancellation::default();
+        let signal = cancellation.clone();
+        let result = cli.validate().and_then(|()| {
+            ctrlc::set_handler(move || signal.cancel())?;
+            speech_cli::run(args, &cancellation)
+        });
+        if let Err(error) = result {
+            eprintln!("error: {error:#}");
+            std::process::exit(if cancellation.is_cancelled() { 130 } else { 1 });
+        }
+        return;
+    }
     let result =
         run(&cli).and_then(|completed| completed.map(|job| deliver(&cli, job)).transpose());
     if cli.json && !matches!(&result, Ok(Some(_))) {

@@ -176,13 +176,65 @@ directory. Canonical terms guide transcription; whole-word aliases are corrected
 even with `--no-polish`. Pronunciation notes guide polishing but are not
 deterministic replacements.
 
+## Text to speech
+
+OpenAI speech synthesis defaults to **Cedar** and `gpt-4o-mini-tts`.
+Set `OPENAI_API_KEY`, then:
+
+```sh
+hear speak "Hello from Hear." --play
+hear speak "Hello from Hear." --voice marin --output hello.wav
+printf 'A short message.' | hear speak - --play
+hear speak "Take your time." --speed 0.9 --instructions "Speak warmly" --play
+```
+
+Without `--play` or `--output`, the file is `speech.wav`. Existing files require
+`--force`; failed requests never replace them. Input is limited to 4096 characters.
+Output is mono 24 kHz PCM16 WAV. Voices are configurable per call with `--voice`.
+Speech is AI-generated. The desktop interface does not yet expose TTS controls.
+
+The SDK delivers decoded audio incrementally. CLI `--play` currently waits for the
+completed file, then uses `paplay` on Linux or `afplay` on macOS. Native streaming
+playback remains a later milestone. Ctrl-C cancels; an in-flight network read can
+wait until the 60-second request deadline. SDK callers can change that deadline
+with `OpenAiSpeech::timeout`.
+
+For a synthesis-only dependency without microphone or native inference:
+
+```toml
+hear = { git = "https://github.com/flaport/hear", branch = "main", default-features = false, features = ["tts"] }
+```
+
+```rust,no_run
+use hear::speech::{Cancellation, OpenAiSpeech, SpeechRequest, synthesize_to_wav};
+
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+synthesize_to_wav(
+    &OpenAiSpeech::from_env()?,
+    &SpeechRequest::new("Hello from Hear."),
+    std::path::Path::new("hello.wav"),
+    false,
+    &Cancellation::default(),
+)?;
+# Ok(())
+# }
+```
+
+`SpeechEngine::synthesize` also accepts a `SpeechAudioSink`, including a closure,
+for ordered PCM chunks. Run it on a worker thread; sinks and progress observers
+run synchronously and must bound their own blocking work. `SpeechEvent::Completed`
+means every sample reached the sink, before WAV finalization or audible playback.
+Failures and cancellation emit their own terminal event. Metadata reports first
+PCM arrival, total synthesis time, and audio duration; first PCM is not first sound.
+The `speak` example builds with only `--no-default-features --features tts`.
+
 ## Rust library
 
 The library exposes the CLI's recording, transcription, dictionary, polishing,
 and file-output capabilities. The CLI adds argument parsing, terminal interaction,
 signal handling, and display.
 
-Enable the complete library without the CLI adapter:
+Enable the transcription workflow without the CLI adapter:
 
 ```toml
 hear = { git = "https://github.com/flaport/hear", branch = "main", default-features = false, features = ["workflow"] }
@@ -218,6 +270,7 @@ For smaller builds, disable default features and choose only what you need:
 | `capture` | OpenAI APIs and microphone recording |
 | `local-polish` | OpenAI APIs and local polishing |
 | `workflow` | All engines, recording, dictionary, and file output |
+| `tts` | OpenAI speech synthesis, PCM sinks, and WAV output |
 | `cli` (default) | Complete library and CLI binary |
 
 The minimal build omits microphone and native inference dependencies.

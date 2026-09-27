@@ -7,7 +7,8 @@ license = "MIT"
 
 [features]
 default = ["cli"]
-cli = ["workflow", "hear-core/cli", "dep:clap", "dep:ctrlc"]
+cli = ["workflow", "tts", "hear-core/cli", "dep:clap", "dep:ctrlc"]
+tts = ["dep:hound"]
 workflow = ["capture", "local-polish", "dep:directories", "dep:hound", "dep:regex", "dep:sha2", "dep:whisper-rs", "dep:tungstenite", "dep:base64"]
 capture = ["hear-core/capture"]
 local-polish = ["dep:hear-local-polish"]
@@ -52,3 +53,7 @@ exclude = ["vendor/whisper-rs", "vendor/whisper-rs-sys"]
 members = ["crates/hear-core", "crates/hear-linux", "crates/hear-local-polish", "crates/hear-macos"]
 default-members = ["."]
 resolver = "3"
+
+[[example]]
+name = "speak"
+required-features = ["tts"]

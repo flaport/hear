@@ -1,5 +1,8 @@
 //! Audio transcription, polishing, recording, and dictionary APIs.
 
+#[cfg(feature = "tts")]
+pub mod speech;
+
 mod context;
 mod ffmpeg;
 mod formatter;

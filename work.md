@@ -24,10 +24,33 @@ Capture uses CPAL and emits mono PCM16 little-endian audio at 16 kHz. `hear-core
 
 The current `workflow` feature includes capture, Whisper, and local polishing. New synthesis and playback capabilities must be independently usable without depending on that umbrella feature.
 
+## Current execution order (2026-09-27)
+
+At the user's request, implement Stage 2 before Stage 1's timing work. OpenAI
+`gpt-4o-mini-tts` is the first engine, with Cedar as the default and a per-call
+voice override. Kokoro, Pocket TTS, and Piper have been auditioned and benchmarked
+on Linux (see `docs/tts-comparison.md`). The user selected Pocket TTS as the
+preferred local engine. Its backend integration is the next local TTS task.
+
+Stage 2 now provides `hear::speech` behind the independent `tts` feature,
+`hear speak`, and the synthesis-only `speak` example. The audio contract is mono
+PCM16 at 24 kHz; future backends must convert to that contract or explicitly
+extend it. The existing capture contract stays at 16 kHz. Synthesis events run
+on the calling worker and completion means delivery to the sink. Cancellation
+is cooperative, with network waits bounded by a configurable total deadline
+(default 60 seconds); callbacks must bound their own work. Atomic WAV output
+protects existing files on errors. CLI `--play` uses a system file player as an
+interim convenience; Stage 3's native playback SDK is still pending.
+
+Future incremental text input should use a session with ordered `submit(text)`
+calls and explicit `finish_input()` and `cancel()`. Audio order must match text
+order, with one terminal completion, failure, or cancellation event. The initial
+implementation takes one complete text request; it does not expose that session.
+
 ## Stage 0 — Baseline and design decisions
 
 - [ ] Confirm that the existing streaming path remains green on macOS and Linux.
-- [ ] Decide the first TTS engine and voice; optimize for implementation speed and streaming support rather than permanence.
+- [x] Decide the first TTS engine and voice; optimize for implementation speed and streaming support rather than permanence.
 - [ ] Audit existing audio dependencies and reuse the current capture stack for playback where practical.
 - [ ] Sketch additive `tts` and `playback` features while preserving existing `capture`, `workflow`, and default CLI behavior. Defer a broader feature reorganization unless implementation requires it.
 - [ ] Define build checks: TTS alone must not pull microphone, Whisper, or local-polishing dependencies; playback alone must not pull synthesis or inference engines; existing minimal and transcription builds must still work.
@@ -63,32 +86,32 @@ Establish the transcription baseline with a thin example around existing SDK cap
 
 Add speech generation independently of microphone capture.
 
-- [ ] Introduce a provider-neutral speech synthesis contract. A provisional blocking shape, with names to be settled in Stage 0:
+- [x] Introduce a provider-neutral speech synthesis contract. A provisional blocking shape, with names to be settled in Stage 0:
 
 ```rust
 pub trait SpeechEngine {
     fn synthesize(
         &self,
-        request: SpeechRequest,
+        request: &SpeechRequest,
         sink: &mut dyn SpeechAudioSink,
         cancellation: &Cancellation,
     ) -> Result<SpeechSummary>;
 }
 ```
 
-- [ ] Define `SpeechRequest` with text and optional voice, speed, and output format preferences. Reject unsupported explicit options clearly and report the actual output format.
-- [ ] Define decoded PCM chunks without coupling the sink API to a provider protocol. Initially support one well-defined format; encoded provider data is decoded before reaching this sink.
-- [ ] Specify which thread calls the sink, whether it may block, how errors propagate, and how another thread cancels synthesis. Bound cancellation waits during network reads and sink writes; document any backend limitations and whether helper-process isolation is required.
-- [ ] Define successful synthesis completion as all audio delivered to the sink. Playback completion is a separate event; cancellation must not appear as successful completion.
-- [ ] Keep incremental audio output distinct from incremental text input. The initial request may contain complete text, but sketch how a future session could accept ordered text segments and an explicit end-of-input without requiring the whole assistant answer first. Defer implementation until after the initial milestones.
-- [ ] Emit structured synthesis start, first-audio, completion, and cancellation events, with documented ordering and failure behavior.
-- [ ] Capture synthesis metadata: selected engine/model/voice, audio duration, request duration, and time to first audio chunk.
-- [ ] Implement the first TTS engine.
-- [ ] Add a `hear speak "hello"` CLI path or a focused `speak` example.
-- [ ] Initially write generated audio to a file so synthesis can be tested independently from playback.
-- [ ] Add deterministic tests with a mock engine and fixture audio.
-- [ ] Ensure errors retain enough context to distinguish authentication, network, decoding, and output failures.
-- [ ] Run the TTS-only dependency and build checks from Stage 0.
+- [x] Define `SpeechRequest` with text, configurable voice, model, speed, and delivery instructions. Use one fixed output format (mono PCM16, 24 kHz), validate supported ranges, and report the actual format. Provider errors reject unknown models or voices.
+- [x] Define decoded PCM chunks without coupling the sink API to a provider protocol. Initially support one well-defined format; encoded provider data is decoded before reaching this sink.
+- [x] Specify which thread calls the sink, whether it may block, how errors propagate, and how another thread cancels synthesis. Bound cancellation waits during network reads and sink writes; document any backend limitations and whether helper-process isolation is required.
+- [x] Define successful synthesis completion as all audio delivered to the sink. Playback completion is a separate event; cancellation must not appear as successful completion.
+- [x] Keep incremental audio output distinct from incremental text input. The initial request may contain complete text, but sketch how a future session could accept ordered text segments and an explicit end-of-input without requiring the whole assistant answer first. Defer implementation until after the initial milestones.
+- [x] Emit structured synthesis start, first-audio, completion, and cancellation events, with documented ordering and failure behavior.
+- [x] Capture synthesis metadata: selected engine/model/voice, audio duration, request duration, and time to first audio chunk.
+- [x] Implement the first TTS engine.
+- [x] Add a `hear speak "hello"` CLI path or a focused `speak` example.
+- [x] Initially write generated audio to a file so synthesis can be tested independently from playback.
+- [x] Add deterministic tests with a mock HTTP transport and fixture audio.
+- [x] Ensure errors retain enough context to distinguish authentication, network, decoding, and output failures.
+- [x] Run the TTS-only dependency and build checks from Stage 0.
 
 **Exit criterion:** text can be synthesized through the Rust SDK and CLI/example into a valid audio file.
 

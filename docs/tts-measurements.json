@@ -1,0 +1,184 @@
+{
+  "date": "2026-09-27",
+  "cpu": "AMD Ryzen AI 9 HX 370",
+  "python": "3.14.2",
+  "dependencies": {
+    "torch": "2.14.0+cpu",
+    "numpy": "2.5.3",
+    "onnxruntime": "1.30.0",
+    "transformers": "5.17.0",
+    "spacy": "3.8.16",
+    "spacy-curated-transformers": "0.3.1",
+    "curated-tokenizers": "0.0.10",
+    "soundfile": "0.14.0"
+  },
+  "piper_model_sha256": "5efe09e69902187827af646e1a6e9d269dee769f9877d17b16b1b46eeaaf019f",
+  "kokoro_revision": "f3ff3571791e39611d31c381e3a41a3af07b4987",
+  "pocket_config": "english_2026-09 (pocket-tts 3.3.0 bundled config)",
+  "openai_common_text": {
+    "model": "gpt-4o-mini-tts",
+    "voice": "cedar",
+    "first_chunk_seconds": 0.8,
+    "synthesis_seconds": 3.92,
+    "audio_seconds": 7.95,
+    "note": "Single live CLI call; timings rounded from stderr, server warm/cold state unknown."
+  },
+  "local_runs": [
+    {
+      "engine": "piper",
+      "voice": "en_US-lessac-medium",
+      "version": "1.8.0",
+      "platform": "Linux-7.2.6-arch2-1-x86_64-with-glibc2.44",
+      "text": "Hear can now turn written words into speech. This is a short test of clarity, pacing, and a natural conversational voice.",
+      "sample_rate": 22050,
+      "cpu_threads": 2,
+      "setup_including_download_seconds": 0.6065962299999228,
+      "runs": [
+        {
+          "trial": 1,
+          "first_chunk_seconds": 0.12444955899991328,
+          "synthesis_seconds": 0.3131223619998309,
+          "audio_seconds": 7.244625850340136,
+          "chunks": 2,
+          "path": "piper-en_US-lessac-medium-1.wav"
+        },
+        {
+          "trial": 2,
+          "first_chunk_seconds": 0.08976763999999093,
+          "synthesis_seconds": 0.2821684959999402,
+          "audio_seconds": 7.1401360544217685,
+          "chunks": 2,
+          "path": "piper-en_US-lessac-medium-2.wav"
+        },
+        {
+          "trial": 3,
+          "first_chunk_seconds": 0.09260352499995861,
+          "synthesis_seconds": 0.2815912549999666,
+          "audio_seconds": 7.058866213151927,
+          "chunks": 2,
+          "path": "piper-en_US-lessac-medium-3.wav"
+        }
+      ],
+      "configuration": "piper"
+    },
+    {
+      "engine": "kokoro",
+      "voice": "af_heart",
+      "version": "0.9.4",
+      "platform": "Linux-7.2.6-arch2-1-x86_64-with-glibc2.44",
+      "text": "Hear can now turn written words into speech. This is a short test of clarity, pacing, and a natural conversational voice.",
+      "sample_rate": 24000,
+      "cpu_threads": 2,
+      "setup_including_download_seconds": 14.349721124999633,
+      "runs": [
+        {
+          "trial": 1,
+          "first_chunk_seconds": 3.152528102999895,
+          "synthesis_seconds": 3.1525384329997905,
+          "audio_seconds": 8.225,
+          "chunks": 1,
+          "path": "kokoro-af_heart-1.wav"
+        },
+        {
+          "trial": 2,
+          "first_chunk_seconds": 2.9145987039996726,
+          "synthesis_seconds": 2.914612059999854,
+          "audio_seconds": 8.225,
+          "chunks": 1,
+          "path": "kokoro-af_heart-2.wav"
+        },
+        {
+          "trial": 3,
+          "first_chunk_seconds": 2.891052947999924,
+          "synthesis_seconds": 2.89106728500019,
+          "audio_seconds": 8.225,
+          "chunks": 1,
+          "path": "kokoro-af_heart-3.wav"
+        }
+      ],
+      "configuration": "kokoro"
+    },
+    {
+      "engine": "kokoro",
+      "voice": "af_heart",
+      "version": "0.9.4",
+      "platform": "Linux-7.2.6-arch2-1-x86_64-with-glibc2.44",
+      "python": "3.14.2",
+      "text": "Hear can now turn written words into speech. This is a short test of clarity, pacing, and a natural conversational voice.",
+      "sample_rate": 24000,
+      "sentence_chunks": true,
+      "dependencies": {
+        "torch": "2.14.0+cpu",
+        "numpy": "2.5.3",
+        "onnxruntime": "1.30.0",
+        "transformers": "5.17.0"
+      },
+      "cpu_threads": 2,
+      "setup_including_download_seconds": 5.11408099099981,
+      "runs": [
+        {
+          "trial": 1,
+          "first_chunk_seconds": 1.4494447259999106,
+          "synthesis_seconds": 4.052353757999754,
+          "audio_seconds": 8.15,
+          "chunks": 2,
+          "path": "kokoro-sentences-af_heart-1.wav"
+        },
+        {
+          "trial": 2,
+          "first_chunk_seconds": 1.212801170000148,
+          "synthesis_seconds": 3.109805235999829,
+          "audio_seconds": 8.15,
+          "chunks": 2,
+          "path": "kokoro-sentences-af_heart-2.wav"
+        },
+        {
+          "trial": 3,
+          "first_chunk_seconds": 0.9157261820000713,
+          "synthesis_seconds": 2.697589940999933,
+          "audio_seconds": 8.15,
+          "chunks": 2,
+          "path": "kokoro-sentences-af_heart-3.wav"
+        }
+      ],
+      "configuration": "kokoro-sentences"
+    },
+    {
+      "engine": "pocket",
+      "voice": "alba",
+      "version": "3.3.0",
+      "platform": "Linux-7.2.6-arch2-1-x86_64-with-glibc2.44",
+      "text": "Hear can now turn written words into speech. This is a short test of clarity, pacing, and a natural conversational voice.",
+      "sample_rate": 24000,
+      "cpu_threads": 2,
+      "setup_including_download_seconds": 10.480269398000019,
+      "runs": [
+        {
+          "trial": 1,
+          "first_chunk_seconds": 0.1250365989999409,
+          "synthesis_seconds": 2.100366840999868,
+          "audio_seconds": 6.96,
+          "chunks": 87,
+          "path": "pocket-alba-1.wav"
+        },
+        {
+          "trial": 2,
+          "first_chunk_seconds": 0.10613967299968863,
+          "synthesis_seconds": 1.9267832139998973,
+          "audio_seconds": 6.56,
+          "chunks": 82,
+          "path": "pocket-alba-2.wav"
+        },
+        {
+          "trial": 3,
+          "first_chunk_seconds": 0.10185722300002453,
+          "synthesis_seconds": 2.2266271690000394,
+          "audio_seconds": 7.28,
+          "chunks": 91,
+          "path": "pocket-alba-3.wav"
+        }
+      ],
+      "configuration": "pocket"
+    }
+  ]
+}

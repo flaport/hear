@@ -8,6 +8,8 @@ pub use hear_core::{Engine, PolishEngine};
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Synthesize speech with OpenAI.
+    Speak(crate::speech_cli::SpeakArgs),
     /// Manage words and names that should be transcribed consistently.
     Dictionary {
         #[command(subcommand)]
@@ -134,7 +136,7 @@ pub struct Cli {
 
 impl Cli {
     pub fn validate(&self) -> Result<()> {
-        if matches!(self.command, Some(Command::Dictionary { .. })) {
+        if self.command.is_some() {
             if self.json
                 || self.input.is_some()
                 || self.record
@@ -154,7 +156,7 @@ impl Cli {
                 || self.raw_output.is_some()
                 || self.force
             {
-                bail!("dictionary commands cannot be combined with transcription options");
+                bail!("subcommands cannot be combined with transcription options");
             }
             return Ok(());
         }
@@ -197,6 +199,38 @@ impl Cli {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn speak_has_independent_options_and_configurable_voice() {
+        let cli = Cli::try_parse_from(["hear", "speak", "Hello", "--play"]).unwrap();
+        cli.validate().unwrap();
+        let Some(Command::Speak(args)) = cli.command else {
+            panic!("expected speak")
+        };
+        assert_eq!(args.voice, "cedar");
+        assert!(args.play);
+        let cli = Cli::try_parse_from([
+            "hear",
+            "speak",
+            "-",
+            "--voice",
+            "marin",
+            "--output",
+            "hello.wav",
+        ])
+        .unwrap();
+        cli.validate().unwrap();
+        let Some(Command::Speak(args)) = cli.command else {
+            panic!("expected speak")
+        };
+        assert_eq!(args.voice, "marin");
+        assert_eq!(
+            args.output.as_deref(),
+            Some(std::path::Path::new("hello.wav"))
+        );
+        let cli = Cli::try_parse_from(["hear", "--no-polish", "speak", "Hello"]).unwrap();
+        assert!(cli.validate().is_err());
+    }
 
     #[test]
     fn stream_implies_record_and_accepts_saved_audio_without_record_flag() {
