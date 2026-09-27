@@ -164,11 +164,24 @@ impl Streaming {
         helper: PathBuf,
         key: impl FnOnce() -> Result<Option<String>>,
     ) -> Result<(Self, crate::audio_stream::AudioSink)> {
+        Self::start_with_live_transcript(hear, helper, key, false)
+    }
+
+    /// Opt into terminal previews and inherited helper stderr for an interactive host.
+    pub fn start_with_live_transcript(
+        hear: &HearConfig,
+        helper: PathBuf,
+        key: impl FnOnce() -> Result<Option<String>>,
+        live_transcript: bool,
+    ) -> Result<(Self, crate::audio_stream::AudioSink)> {
         hear.preflight()?;
         let mut command = Command::new(helper);
         command
             .args(hear.arguments())
             .args(["--json", "--pcm-stdin"]);
+        if live_transcript {
+            command.arg("--live-transcript");
+        }
         if hear.requires_openai() && std::env::var_os("OPENAI_API_KEY").is_none() {
             let key = key()?.context("no OpenAI API key configured")?;
             command.env("OPENAI_API_KEY", key);
@@ -176,11 +189,12 @@ impl Streaming {
         let (sink, audio, health) = crate::audio_stream::channel();
         let (sender, result) = std::sync::mpsc::channel();
         let job = process::Job::spawn(move |cancellation| {
-            let output = process::run_streaming(
+            let output = process::run_streaming_with_stderr(
                 &mut command,
                 audio,
                 &cancellation,
                 Duration::from_secs(3600),
+                live_transcript,
             );
             let _ = sender.send(output);
         });

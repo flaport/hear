@@ -92,6 +92,7 @@ pub struct Workflow {
     dictionary: Dictionary,
     client: Option<OpenAiClient>,
     observer: Option<Observer>,
+    transcript_observer: Option<crate::streaming::Observer>,
 }
 impl Workflow {
     pub fn new(config: HearConfig) -> Self {
@@ -100,6 +101,7 @@ impl Workflow {
             dictionary: Dictionary::default(),
             client: None,
             observer: None,
+            transcript_observer: None,
         }
     }
     pub fn dictionary(mut self, dictionary: Dictionary) -> Self {
@@ -112,6 +114,17 @@ impl Workflow {
     }
     pub fn progress(mut self, observer: impl Fn(WorkflowEvent) + Send + Sync + 'static) -> Self {
         self.observer = Some(Arc::new(observer));
+        self
+    }
+    /// Observe provisional and committed engine segments during `run_streaming`.
+    /// Called synchronously on the transcription worker, never the microphone
+    /// callback. Keep observers fast; partial text is not a successful result.
+    /// Enabling this adds periodic preview inference for local Whisper.
+    pub fn transcript_updates(
+        mut self,
+        observer: impl Fn(crate::streaming::TranscriptUpdate) + Send + Sync + 'static,
+    ) -> Self {
+        self.transcript_observer = Some(Arc::new(observer));
         self
     }
     fn report(&self, stage: Stage) {
@@ -228,6 +241,7 @@ impl Workflow {
                 &self.config,
                 &self.dictionary.canonical_terms(),
                 client.as_ref(),
+                self.transcript_observer.clone(),
             )?;
             crate::streaming::transcribe(input, adapter)
         };

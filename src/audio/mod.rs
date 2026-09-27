@@ -24,20 +24,33 @@ pub fn record() -> Result<RecordingOutcome> {
 
 pub fn record_stream(
     config: &hear::HearConfig,
+    live_transcript: bool,
 ) -> Result<Option<(hear::Transcript, hear_core::helper::Recording)>> {
     require_terminal()?;
     let helper = std::env::current_exe()?;
     let cancellation = hear_core::process::Cancellation::default();
     let signal = cancellation.clone();
     ctrlc::set_handler(move || signal.cancel())?;
-    let recorder = hear_core::dictation::Recorder::start(config, helper.clone(), || Ok(None))?;
+    let recorder = hear_core::dictation::Recorder::start_with_live_transcript(
+        config,
+        helper.clone(),
+        || Ok(None),
+        live_transcript,
+    )?;
     if !wait_for_stop(|| recorder.check(), || cancellation.is_cancelled())? {
+        drop(recorder);
+        if live_transcript {
+            eprintln!();
+        }
         return Ok(None);
     }
     let result = recorder
         .stop()
         .transcribe(config, helper, || Ok(None), &cancellation);
     if cancellation.is_cancelled() {
+        if live_transcript {
+            eprintln!();
+        }
         return Ok(None);
     }
     result.map(Some)

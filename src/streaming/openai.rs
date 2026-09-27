@@ -1,4 +1,4 @@
-use super::Adapter;
+use super::{Adapter, Observer, TranscriptUpdate};
 use crate::OpenAiClient;
 use anyhow::{Context, Result, bail};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
@@ -31,6 +31,8 @@ struct Turns {
     completed: HashMap<String, String>,
     bytes: usize,
     configured: bool,
+    partial: HashMap<String, String>,
+    observer: Option<Observer>,
 }
 impl Turns {
     fn event(&mut self, event: Value) -> Result<()> {
@@ -60,6 +62,40 @@ impl Turns {
                     bail!("realtime transcript exceeded 8 MiB");
                 }
                 self.completed.insert(id.into(), text.into());
+                self.partial.remove(id);
+                if let Some(observer) = &self.observer {
+                    observer(TranscriptUpdate {
+                        segment_id: id.into(),
+                        text: text.into(),
+                        committed: true,
+                    });
+                }
+            }
+            "conversation.item.input_audio_transcription.delta" if self.observer.is_some() => {
+                let id = event["item_id"].as_str().context("missing delta item ID")?;
+                let delta = event["delta"]
+                    .as_str()
+                    .context("missing transcript delta")?;
+                // Completed text is authoritative, including if a late delta arrives.
+                if !self.completed.contains_key(id) {
+                    self.bytes += delta.len();
+                    if self.bytes > 8 * 1024 * 1024 {
+                        bail!("realtime transcript exceeded 8 MiB");
+                    }
+                    let text = self.partial.entry(id.into()).or_default();
+                    text.push_str(delta);
+                    let update = TranscriptUpdate {
+                        segment_id: id.into(),
+                        text: text.clone(),
+                        committed: false,
+                    };
+                    if self.partial.len() > 1024 {
+                        bail!("too many realtime partial turns");
+                    }
+                    if let Some(observer) = &self.observer {
+                        observer(update);
+                    }
+                }
             }
             "error" | "conversation.item.input_audio_transcription.failed" => {
                 bail!(
@@ -69,7 +105,7 @@ impl Turns {
                         .unwrap_or("transcription failed")
                 );
             }
-            // Deltas may be revised. Paste only the completed transcript for each turn.
+            // Final delivery uses completed transcripts only, never previews.
             _ => {}
         }
         Ok(())
@@ -91,7 +127,11 @@ impl Turns {
 }
 
 impl Realtime {
-    pub fn new(client: &OpenAiClient, vocabulary: &[String]) -> Result<Self> {
+    pub fn new(
+        client: &OpenAiClient,
+        vocabulary: &[String],
+        observer: Option<Observer>,
+    ) -> Result<Self> {
         for term in vocabulary {
             if term.contains(['<', '>', '\r', '\n']) {
                 bail!("OpenAI realtime dictionary terms cannot contain <, >, or newlines");
@@ -135,7 +175,10 @@ impl Realtime {
             resampler: Resampler::new(16000, 24000),
             pending: 0,
             commits: 0,
-            turns: Turns::default(),
+            turns: Turns {
+                observer,
+                ..Default::default()
+            },
         };
         session.set_read_timeout(Duration::from_millis(10))?;
         session.send(json!({"type":"session.update", "session": {
@@ -277,12 +320,17 @@ mod tests {
                 .unwrap();
             let mut bytes = Vec::new();
             let mut sizes = Vec::new();
+            let mut preview_sent = false;
             loop {
                 let message = socket.read().unwrap();
                 let event: Value = serde_json::from_str(message.to_text().unwrap()).unwrap();
                 match event["type"].as_str().unwrap() {
                     "input_audio_buffer.append" => {
-                        bytes.extend(STANDARD.decode(event["audio"].as_str().unwrap()).unwrap())
+                        bytes.extend(STANDARD.decode(event["audio"].as_str().unwrap()).unwrap());
+                        if !preview_sent {
+                            socket.send(Message::Text(json!({"type":"conversation.item.input_audio_transcription.delta", "item_id":"turn1", "delta":"use quadrant"}).to_string().into())).unwrap();
+                            preview_sent = true;
+                        }
                     }
                     "input_audio_buffer.commit" => {
                         sizes.push(bytes.len());
@@ -328,6 +376,28 @@ mod tests {
         let audio: Vec<_> = std::iter::repeat_n(1000_i16, 15 * 16000 + 160)
             .flat_map(i16::to_le_bytes)
             .collect();
+        let updates = std::sync::Arc::new(std::sync::Mutex::new(Vec::<TranscriptUpdate>::new()));
+        let observed = updates.clone();
+        struct Input {
+            audio: std::io::Cursor<Vec<u8>>,
+            updates: std::sync::Arc<std::sync::Mutex<Vec<TranscriptUpdate>>>,
+        }
+        impl std::io::Read for Input {
+            fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+                let n = self.audio.read(buffer)?;
+                if n == 0 {
+                    // A live preview must arrive before EOF commits the final turn.
+                    assert!(
+                        self.updates
+                            .lock()
+                            .unwrap()
+                            .iter()
+                            .any(|u| !u.committed && u.text == "use quadrant")
+                    );
+                }
+                Ok(n)
+            }
+        }
         let transcript = crate::Workflow::new(crate::HearConfig {
             stream: true,
             polish: false,
@@ -335,10 +405,23 @@ mod tests {
         })
         .openai_client(client)
         .dictionary(dictionary)
-        .run_streaming(audio.as_slice())
+        .transcript_updates(move |update| observed.lock().unwrap().push(update))
+        .run_streaming(Input {
+            audio: std::io::Cursor::new(audio),
+            updates: updates.clone(),
+        })
         .unwrap();
         assert_eq!(transcript.raw, "use Qdrant last words");
         assert_eq!(transcript.text, transcript.raw);
+        assert_eq!(
+            updates
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|u| u.committed)
+                .count(),
+            2
+        );
         assert_eq!(server.join().unwrap(), vec![15 * RATE * 2, RATE / 10 * 2]);
     }
     #[test]
@@ -360,5 +443,29 @@ mod tests {
     fn server_failures_are_not_partial_successes() {
         let mut turns = Turns::default();
         assert!(turns.event(json!({"type":"conversation.item.input_audio_transcription.failed", "error":{"message":"quota"}})).unwrap_err().to_string().contains("quota"));
+    }
+    #[test]
+    fn previews_accumulate_by_item_and_completed_text_replaces_them() {
+        let updates = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let observed = updates.clone();
+        let mut turns = Turns {
+            observer: Some(std::sync::Arc::new(move |u| {
+                observed.lock().unwrap().push(u)
+            })),
+            ..Default::default()
+        };
+        for (id, delta) in [("a", "wrong"), ("b", "second"), ("a", " words")] {
+            turns.event(json!({"type":"conversation.item.input_audio_transcription.delta", "item_id":id, "delta":delta})).unwrap();
+        }
+        assert!(turns.text().is_empty());
+        turns.event(json!({"type":"conversation.item.input_audio_transcription.completed", "item_id":"a", "transcript":"correct words"})).unwrap();
+        turns.event(json!({"type":"conversation.item.input_audio_transcription.delta", "item_id":"a", "delta":"late"})).unwrap();
+        let updates = updates.lock().unwrap();
+        assert_eq!(
+            updates.iter().map(|u| u.text.as_str()).collect::<Vec<_>>(),
+            ["wrong", "second", "wrong words", "correct words"]
+        );
+        assert!(updates.last().unwrap().committed);
+        assert!(!turns.partial.contains_key("a"));
     }
 }

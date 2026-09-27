@@ -59,13 +59,21 @@ pub struct Cli {
     #[arg(long, conflicts_with = "input")]
     pub record: bool,
 
-    /// Record and transcribe while speaking (implies --record).
+    /// Record with live transcript previews on stderr (implies --record).
     #[arg(long, conflicts_with = "input")]
     pub stream: bool,
+
+    /// Whisper streaming window in seconds (3-30; default 12), with overlapping audio.
+    #[arg(long, value_name = "SECONDS", requires = "stream", value_parser = clap::value_parser!(u16).range(3..=30))]
+    pub stream_window: Option<u16>,
 
     /// Internal helper transport: mono PCM16 LE at 16 kHz until EOF.
     #[arg(long, hide = true, requires = "stream", conflicts_with_all = ["input", "record", "save_recording"])]
     pub pcm_stdin: bool,
+
+    /// Internal helper switch for live transcript previews on stderr.
+    #[arg(long, hide = true, requires = "pcm_stdin")]
+    pub live_transcript: bool,
 
     /// Keep a recording at this location instead of deleting it afterward.
     #[arg(long, value_name = "PATH", requires = "capture")]
@@ -131,6 +139,7 @@ impl Cli {
                 || self.input.is_some()
                 || self.record
                 || self.stream
+                || self.stream_window.is_some()
                 || self.pcm_stdin
                 || self.save_recording.is_some()
                 || self.engine.is_some()
@@ -170,6 +179,7 @@ impl Cli {
         hear_core::HearConfig {
             engine: self.engine,
             stream: self.stream,
+            stream_window: self.stream_window,
             model: self.model.clone(),
             language: self.language.clone(),
             polish_engine: self.polish_engine,
@@ -226,6 +236,33 @@ mod tests {
         );
         assert_eq!(cli.polish_model, None);
         assert!(cli.should_polish());
+    }
+    #[test]
+    fn accepts_a_whisper_stream_window_only_for_streaming_whisper() {
+        let cli = Cli::try_parse_from([
+            "hear",
+            "--stream",
+            "--model",
+            "tiny.en",
+            "--stream-window",
+            "5",
+        ])
+        .unwrap();
+        cli.validate().unwrap();
+        assert_eq!(cli.hear_config().stream_window, Some(5));
+        for args in [
+            vec!["hear", "--record", "--stream-window", "5"],
+            vec!["hear", "--stream", "--stream-window", "2"],
+            vec!["hear", "--stream", "--stream-window", "31"],
+        ] {
+            assert!(Cli::try_parse_from(args).is_err());
+        }
+        assert!(
+            Cli::try_parse_from(["hear", "--stream", "--stream-window", "5"])
+                .unwrap()
+                .validate()
+                .is_err()
+        );
     }
 
     #[test]

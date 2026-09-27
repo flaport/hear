@@ -21,9 +21,20 @@ impl Recorder {
         helper: PathBuf,
         key: impl FnOnce() -> Result<Option<String>>,
     ) -> Result<Self> {
+        Self::start_with_live_transcript(config, helper, key, false)
+    }
+
+    /// Enable terminal previews; desktop callers retain quiet helper output by default.
+    pub fn start_with_live_transcript(
+        config: &HearConfig,
+        helper: PathBuf,
+        key: impl FnOnce() -> Result<Option<String>>,
+        live_transcript: bool,
+    ) -> Result<Self> {
         config.preflight()?;
         let (streaming, sink) = if config.stream {
-            let (streaming, sink) = Streaming::start(config, helper, key)?;
+            let (streaming, sink) =
+                Streaming::start_with_live_transcript(config, helper, key, live_transcript)?;
             (Some(streaming), Some(sink))
         } else {
             (None, None)

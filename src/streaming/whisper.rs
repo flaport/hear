@@ -1,12 +1,11 @@
-use super::Adapter;
+use super::{Adapter, Observer, TranscriptUpdate};
 use anyhow::{Context, Result};
 use whisper_rs::{
     FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters, WhisperState,
 };
 
 const RATE: usize = 16000;
-const WINDOW: usize = 12 * RATE;
-const OVERLAP: usize = 3 * RATE;
+const PREVIEW_INTERVAL: usize = 2 * RATE;
 
 pub(super) struct Whisper {
     state: WhisperState,
@@ -15,9 +14,20 @@ pub(super) struct Whisper {
     audio: Vec<f32>,
     text: String,
     fresh_samples: usize,
+    preview_samples: usize,
+    segment: usize,
+    observer: Option<Observer>,
+    window: usize,
+    overlap: usize,
 }
 impl Whisper {
-    pub fn new(model_name: &str, language: &str, vocabulary: &[String]) -> Result<Self> {
+    pub fn new(
+        model_name: &str,
+        language: &str,
+        vocabulary: &[String],
+        window_seconds: u16,
+        observer: Option<Observer>,
+    ) -> Result<Self> {
         use crate::engines::whisper::{model, resolve_language};
         let model = model::find(model_name)?;
         let language = resolve_language(model, language)?.map(str::to_owned);
@@ -39,13 +49,15 @@ impl Whisper {
             audio: Vec::new(),
             text: String::new(),
             fresh_samples: 0,
+            preview_samples: 0,
+            segment: 0,
+            observer,
+            window: usize::from(window_seconds) * RATE,
+            overlap: (usize::from(window_seconds) * RATE / 4).min(3 * RATE),
         })
     }
 
-    fn decode(&mut self, final_chunk: bool) -> Result<()> {
-        if self.fresh_samples == 0 {
-            return Ok(());
-        }
+    fn infer(&mut self) -> Result<String> {
         let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
         params.set_language(self.language.as_deref());
         params.set_translate(false);
@@ -60,29 +72,49 @@ impl Whisper {
         if !self.prompt.is_empty() {
             params.set_initial_prompt(&self.prompt);
         }
-        // Whisper needs at least a short input; only pad the final inference copy.
+        // Pad only the inference copy, never the retained real audio.
         let mut samples = self.audio.clone();
         samples.resize(samples.len().max(RATE), 0.0);
         self.state.full(params, &samples)?;
-        let text = self
+        Ok(self
             .state
             .as_iter()
             .map(|s| s.to_string())
-            .collect::<String>();
+            .collect::<String>())
+    }
+
+    fn report(&self, text: &str, committed: bool) {
+        if let Some(observer) = &self.observer {
+            observer(TranscriptUpdate {
+                segment_id: self.segment.to_string(),
+                text: text.trim().to_owned(),
+                committed,
+            });
+        }
+    }
+
+    fn decode(&mut self, final_chunk: bool) -> Result<()> {
+        if self.fresh_samples == 0 {
+            return Ok(());
+        }
+        let text = self.infer()?;
+        self.report(&text, true);
         if self.text.is_empty() {
             self.text.push_str(text.trim());
         } else {
             append_overlap(&mut self.text, &text);
         }
         // Whisper timestamps are too approximate for cutting a word boundary.
-        // Re-decode three seconds of real audio and reconcile the overlapping text.
+        // Re-decode a quarter-window (up to three seconds) and reconcile the text.
         let cut = if final_chunk {
             self.audio.len()
         } else {
-            self.audio.len().saturating_sub(OVERLAP)
+            self.audio.len().saturating_sub(self.overlap)
         };
         self.audio.drain(..cut);
         self.fresh_samples = 0;
+        self.preview_samples = 0;
+        self.segment += 1;
         Ok(())
     }
 }
@@ -116,8 +148,13 @@ impl Adapter for Whisper {
         self.audio
             .extend(samples.iter().map(|s| *s as f32 / 32768.0));
         self.fresh_samples += samples.len();
-        if self.audio.len() >= WINDOW {
+        self.preview_samples += samples.len();
+        if self.audio.len() >= self.window {
             self.decode(false)?;
+        } else if self.observer.is_some() && self.preview_samples >= PREVIEW_INTERVAL {
+            let text = self.infer()?;
+            self.report(&text, false);
+            self.preview_samples = 0;
         }
         Ok(())
     }

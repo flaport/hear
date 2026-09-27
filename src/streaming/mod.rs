@@ -5,7 +5,20 @@ mod whisper;
 
 use crate::{Engine, HearConfig, OpenAiClient};
 use anyhow::{Result, bail};
-use std::io::Read;
+use std::{io::Read, sync::Arc};
+
+/// A replacement snapshot for one engine segment, before dictionary correction
+/// or polishing. Segment IDs are opaque and unique within a transcription run.
+/// Partial snapshots can change; committed snapshots end that segment, not the
+/// recording. Overlapping Whisper segments may repeat boundary words.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TranscriptUpdate {
+    pub segment_id: String,
+    pub text: String,
+    pub committed: bool,
+}
+
+pub(crate) type Observer = Arc<dyn Fn(TranscriptUpdate) + Send + Sync>;
 
 /// Receives mono 16 kHz signed PCM samples. `finish` flushes the last audio.
 pub trait Adapter {
@@ -17,16 +30,20 @@ pub(crate) fn adapter(
     config: &HearConfig,
     vocabulary: &[String],
     client: Option<&OpenAiClient>,
+    observer: Option<Observer>,
 ) -> Result<Box<dyn Adapter>> {
     match config.resolved_engine() {
         Engine::Whisper => Ok(Box::new(whisper::Whisper::new(
             config.model.as_deref().unwrap_or("tiny.en"),
             config.language.as_deref().unwrap_or("en"),
             vocabulary,
+            config.stream_window.unwrap_or(12),
+            observer,
         )?)),
         Engine::GptTranscribe => Ok(Box::new(openai::Realtime::new(
             client.ok_or_else(|| anyhow::anyhow!("OpenAI client required"))?,
             vocabulary,
+            observer,
         )?)),
         Engine::Codex => bail!("Codex does not support streaming"),
     }

@@ -18,7 +18,7 @@ The immediate goal is deliberately small: speak into the local microphone and he
 
 ## Existing foundation
 
-Hear already supports microphone capture and streaming transcription through `Workflow::run_streaming` and `streaming::Adapter`. Audio is processed while recording, but the public adapter returns the completed transcript at `finish()`. Return finishes a CLI recording; Ctrl-C cancels it.
+Hear already supports microphone capture and streaming transcription through `Workflow::run_streaming` and `streaming::Adapter`. `Workflow::transcript_updates` exposes provisional and committed engine segments while audio is processed; the adapter still returns the completed transcript at `finish()`. Interactive `hear --stream` shows live previews on stderr. Return finishes a CLI recording; Ctrl-C cancels it. Timing instrumentation remains to be added.
 
 Capture uses CPAL and emits mono PCM16 little-endian audio at 16 kHz. `hear-core::audio_stream::AudioSink` already names the bounded capture transport. Desktop companions use isolated helper processes to cancel native inference or network work. Reuse these capabilities and account for their lifetime model instead of building a second transcription pipeline.
 
@@ -187,7 +187,7 @@ Turn the one-shot experiment into a useful interactive harness.
 
 This stage is relevant to Cody Link but is not required for the initial echo benchmark.
 
-- [ ] Emit incremental transcription events rather than returning text only at `finish()`.
+- [x] Emit incremental transcription events alongside the final result at `finish()` through `Workflow::transcript_updates`.
 - [ ] Distinguish partial transcripts, committed text, and completed conversational turns.
 - [ ] Implement incremental text submission to synthesis using the session contract sketched in Stage 2, with explicit ordering, flush/end-of-input, and cancellation semantics. Keep decisions about assistant response content outside Hear.
 - [ ] Add barge-in: microphone speech cancels or ducks active playback.

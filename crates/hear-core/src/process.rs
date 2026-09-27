@@ -72,6 +72,7 @@ pub fn run(
         cancellation,
         timeout,
         forward,
+        false,
     )
 }
 
@@ -81,12 +82,24 @@ pub fn run_streaming(
     cancellation: &Cancellation,
     timeout: Duration,
 ) -> Result<Output> {
+    run_streaming_with_stderr(command, input, cancellation, timeout, false)
+}
+
+/// Inherit stderr for interactive live output while keeping helper stdout private.
+pub fn run_streaming_with_stderr(
+    command: &mut Command,
+    input: crate::audio_stream::AudioReceiver,
+    cancellation: &Cancellation,
+    timeout: Duration,
+    inherit_stderr: bool,
+) -> Result<Output> {
     run_input(
         command,
         Some(Input::Stream(input)),
         cancellation,
         timeout,
         false,
+        inherit_stderr,
     )
 }
 
@@ -108,6 +121,7 @@ fn run_input(
     cancellation: &Cancellation,
     timeout: Duration,
     forward: bool,
+    inherit_stderr: bool,
 ) -> Result<Output> {
     let owns_group = std::env::var_os("HEAR_PROCESS_GROUP").is_none();
     #[cfg(unix)]
@@ -126,14 +140,21 @@ fn run_input(
                 Stdio::null()
             })
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stderr(if inherit_stderr {
+                Stdio::inherit()
+            } else {
+                Stdio::piped()
+            })
             .spawn()
             .context("could not launch helper")?,
     };
     let stdout = child.child.stdout.take().context("missing helper stdout")?;
-    let stderr = child.child.stderr.take().context("missing helper stderr")?;
+    let stderr = child.child.stderr.take();
     let out = thread::spawn(move || drain(stdout, forward));
-    let err = thread::spawn(move || drain(stderr, forward));
+    let err = thread::spawn(move || match stderr {
+        Some(stderr) => drain(stderr, forward),
+        None => Ok(Vec::new()),
+    });
     let writer_stop = StopWriter(Cancellation::default());
     let writer = input.map(|input| {
         let mut stdin = child.child.stdin.take().expect("piped stdin");

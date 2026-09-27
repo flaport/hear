@@ -49,8 +49,18 @@ converted with FFmpeg; oversized uploads are compressed and split into
 
 ## Streaming microphone transcription
 
-`--stream` implies `--record`: transcription begins while you speak. Press Return
-to finish, then Hear polishes and delivers the completed transcript once.
+`--stream` implies `--record`: transcription begins while you speak, with `[live]`
+previews on stderr before you press anything. Press Return to finish, then Hear
+polishes and delivers the completed transcript once on stdout (or to `-o PATH`).
+Use `--no-polish` to skip polishing.
+
+Local Whisper previews refresh after roughly every two seconds of new audio,
+plus inference time. New words extend the current line; revisions start a new
+`[live]` line. The previews are provisional, can repeat words across overlapping
+windows, and have not received dictionary corrections or polishing. OpenAI
+previews follow the provider's incoming transcript deltas. Redirect stderr to
+hide or save previews while keeping stdout usable in a pipeline. Desktop helpers
+and `--json` recordings keep previews disabled by default.
 
 ```sh
 # OpenAI realtime (requires OPENAI_API_KEY)
@@ -58,6 +68,9 @@ hear --stream --engine gpt-transcribe --model gpt-live-transcribe
 
 # Local Whisper transcription; add --polish-engine local for local polishing
 hear --stream --engine whisper --model tiny.en
+
+# Try shorter, overlapping Whisper windows with live previews
+hear --stream --engine whisper --model tiny.en --stream-window 5 --no-polish
 
 # Compare transcription latency without polishing, and retain the test recording
 hear --stream --model tiny.en --no-polish --save-recording trial.wav
@@ -70,6 +83,14 @@ a realtime WebSocket and commits bounded turns during long dictations. Local
 Whisper keeps its model loaded for the recording and processes rolling windows,
 retaining unfinished audio for the next window. Streaming can change accuracy;
 compare the result with `hear trial.wav --model tiny.en --no-polish`.
+
+Whisper's `--stream-window SECONDS` accepts 3–30 seconds (default 12). Each window
+retains a quarter of its audio, capped at three seconds, for the next decode.
+A five-second window therefore overlaps by 1.25 seconds. The window controls
+when segments are committed; provisional previews still refresh roughly every
+two seconds of new audio. Smaller windows reduce context and can change accuracy
+or boundary-word reconciliation. Desktop configuration uses `stream_window = 5`
+alongside `stream = true` and `engine = "whisper"` under `[hear]`.
 
 `--stream` conflicts with an audio-file argument and does not support Codex.
 Explicit `--record --stream` is accepted. Audio is also saved to a recovery WAV;
@@ -89,6 +110,13 @@ to `true`; the caller owns capture, cancellation and saving recovery audio.
 Adapters share the `hear::streaming::Adapter` interface. Desktop companions send
 PCM to an isolated helper process so cancellation can stop native inference or
 network operations without blocking the microphone callback.
+
+Use `Workflow::transcript_updates` to observe `streaming::TranscriptUpdate`
+events in a library consumer. Each event replaces the text for its `segment_id`;
+`committed` ends that engine segment, not the recording. Cross-segment completion
+order is provider-dependent. Callbacks run synchronously on the transcription
+worker and should return promptly. Enabling previews adds periodic inference for
+Whisper; the existing final transcript assembly still uses the larger windows.
 
 ## Local transcription and polishing
 

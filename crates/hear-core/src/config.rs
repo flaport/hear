@@ -49,6 +49,8 @@ pub struct HearConfig {
     pub context: FormatContext,
     pub polish: bool,
     pub stream: bool,
+    /// Whisper decode window in seconds (3..=30); defaults to 12.
+    pub stream_window: Option<u16>,
     #[serde(deserialize_with = "optional")]
     pub save_recording: Option<PathBuf>,
     #[serde(deserialize_with = "optional")]
@@ -68,6 +70,7 @@ impl Default for HearConfig {
             context: FormatContext::Auto,
             polish: true,
             stream: false,
+            stream_window: None,
             save_recording: None,
             output: None,
             raw_output: None,
@@ -130,6 +133,14 @@ impl HearConfig {
         self.output.as_deref()
     }
     pub fn validate(&self) -> Result<()> {
+        if let Some(window) = self.stream_window {
+            if !self.stream || self.resolved_engine() != Engine::Whisper {
+                bail!("--stream-window requires --stream with whisper");
+            }
+            if !(3..=30).contains(&window) {
+                bail!("--stream-window must be between 3 and 30 seconds");
+            }
+        }
         if self.stream && self.resolved_engine() == Engine::Codex {
             bail!("streaming is supported with whisper or gpt-transcribe, not codex");
         }
@@ -222,6 +233,7 @@ impl HearConfig {
         arg!("--engine", self.engine.map(|v| v.to_string()));
         arg!("--model", self.model.as_deref());
         arg!("--language", self.language.as_deref());
+        arg!("--stream-window", self.stream_window.map(|v| v.to_string()));
         if self.polish {
             arg!("--polish-engine", self.polish_engine.map(|v| v.to_string()));
             arg!("--polish-model", self.polish_model.as_deref());
@@ -254,6 +266,35 @@ pub fn is_local_polish_model(m: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn whisper_window_is_validated_and_forwarded_to_helpers() {
+        let config: HearConfig =
+            toml::from_str("stream=true\nengine='whisper'\nstream_window=5").unwrap();
+        config.validate().unwrap();
+        assert!(
+            config
+                .arguments()
+                .windows(2)
+                .any(|args| args == ["--stream-window", "5"])
+        );
+        for (stream, engine, window) in [
+            (true, Engine::Whisper, 0),
+            (true, Engine::Whisper, 31),
+            (false, Engine::Whisper, 5),
+            (true, Engine::GptTranscribe, 5),
+        ] {
+            assert!(
+                HearConfig {
+                    stream,
+                    engine: Some(engine),
+                    stream_window: Some(window),
+                    ..Default::default()
+                }
+                .validate()
+                .is_err()
+            );
+        }
+    }
     #[test]
     fn streaming_config_matches_cli_and_rejects_unsupported_combinations() {
         for source in [

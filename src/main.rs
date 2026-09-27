@@ -1,6 +1,7 @@
 mod audio;
 mod cli;
 mod dictionary_cli;
+mod live;
 
 use std::io::{self, Write};
 
@@ -74,7 +75,7 @@ fn run(cli: &Cli) -> Result<Option<Completed>, WorkflowError> {
     }
     let config = cli.hear_config();
     let engine = config.resolved_engine();
-    let workflow = Workflow::new(config.clone())
+    let mut workflow = Workflow::new(config.clone())
         .dictionary(Dictionary::load().map_err(validation)?)
         .progress(move |event| match event {
             WorkflowEvent::Stage(Stage::Transcription) => {
@@ -91,19 +92,38 @@ fn run(cli: &Cli) -> Result<Option<Completed>, WorkflowError> {
             }
             _ => {}
         });
+    let live_display = cli
+        .live_transcript
+        .then(|| std::sync::Arc::new(std::sync::Mutex::new(live::Display::default())));
+    if let Some(display) = live_display.clone() {
+        // This runs in the isolated CLI helper; keep native initialization logs
+        // from overwhelming the live text. Rust errors still reach the terminal.
+        if engine == hear::Engine::Whisper {
+            whisper_rs::install_logging_hooks();
+        }
+        workflow = workflow.transcript_updates(move |update| {
+            if let Ok(mut display) = display.lock() {
+                let _ = display.update(&mut io::stderr().lock(), &update);
+            }
+        });
+    }
     workflow.preflight(cli.input.as_deref())?;
     if cli.pcm_stdin {
-        return workflow
-            .run_streaming(io::stdin().lock())
-            .map(|transcript| {
-                Some(Completed {
-                    transcript,
-                    recording: None,
-                })
-            });
+        let result = workflow.run_streaming(io::stdin().lock());
+        if let Some(display) = live_display
+            && let Ok(mut display) = display.lock()
+        {
+            let _ = display.finish(&mut io::stderr().lock());
+        }
+        return result.map(|transcript| {
+            Some(Completed {
+                transcript,
+                recording: None,
+            })
+        });
     }
     if cli.stream {
-        return audio::record_stream(&config)
+        return audio::record_stream(&config, !cli.json)
             .map(|result| {
                 result.map(|(transcript, recording)| Completed {
                     transcript,
