@@ -7,6 +7,9 @@
   a feature be developed in a PR.
 - If a PR is explicitly requested, follow the user's stated PR workflow for
   that task.
+- When the user requests a reinstall, always reinstall both the CLI and the
+  desktop app for the current platform, regardless of which one is relevant
+  to the conversation, unless the user explicitly specifies otherwise.
 - After every local macOS app install or update, open System Settings →
   Privacy & Security → Accessibility so the user can re-enable Hear's paste
   permissions. For now, local app updates require the user to re-enable these
