@@ -26,7 +26,7 @@ The current `workflow` feature includes capture, Whisper, and local polishing. N
 
 ## Current execution order (2026-09-27)
 
-At the user's request, implement Stage 2 before Stage 1's timing work. OpenAI
+At the user's request, Stage 2 was completed before Stage 1's timing work. OpenAI
 `gpt-4o-mini-tts` is the first engine, with Cedar as the default and a per-call
 voice override. Kokoro, Pocket TTS, and Piper have been auditioned and benchmarked
 on Linux (see `docs/tts-comparison.md`). The user selected Pocket TTS as the
@@ -41,8 +41,10 @@ Stage 2 now provides `hear::speech` behind the independent `tts` feature,
 PCM16 at 24 kHz; future backends must convert to that contract or explicitly
 extend it. The existing capture contract stays at 16 kHz. Synthesis events run
 on the calling worker and completion means delivery to the sink. Cancellation
-is cooperative, with network waits bounded by a configurable total deadline
-(default 60 seconds); callbacks must bound their own work. Atomic WAV output
+is cooperative. OpenAI has a configurable total deadline (default 60 seconds);
+Pocket bounds asset-download network waits to 10 seconds and checks cancellation
+between inference frames. Model loading and individual tensor operations cannot
+be interrupted; callbacks must bound their own work. Atomic WAV output
 protects existing files on errors. CLI `--play` uses a system file player as an
 interim convenience; Stage 3's native playback SDK is still pending.
 
@@ -51,22 +53,35 @@ calls and explicit `finish_input()` and `cancel()`. Audio order must match text
 order, with one terminal completion, failure, or cancellation event. The initial
 implementation takes one complete text request; it does not expose that session.
 
+Status: Stage 2 is complete. Stage 0's synthesis contracts and build checks are
+complete; playback design and macOS verification remain open. Stage 3 has working
+CLI file playback, while its native SDK remains pending. Stage 1's timing harness
+and Stages 4–6 have not been implemented.
+
+### Quality follow-up
+
+- [ ] Compare native Pocket Alba with the initial Python Alba audition using the same text and settings. The user found the later samples somewhat worse, but accepts the current quality for now. The cause has not been established; this is a follow-up, not a blocker for the completed TTS integration.
+
 ## Stage 0 — Baseline and design decisions
 
-- [ ] Confirm that the existing streaming path remains green on macOS and Linux.
-- [x] Decide the first TTS engine and voice; optimize for implementation speed and streaming support rather than permanence.
+- [x] Verify existing transcription/build checks on Linux after the TTS changes.
+- [ ] Verify the current changes and existing streaming path on macOS.
+- [x] Decide the first TTS engine and voice: OpenAI with Cedar, plus native Pocket TTS with Alba. Both voices remain configurable.
 - [ ] Audit existing audio dependencies and reuse the current capture stack for playback where practical.
-- [ ] Sketch additive `tts` and `playback` features while preserving existing `capture`, `workflow`, and default CLI behavior. Defer a broader feature reorganization unless implementation requires it.
-- [ ] Define build checks: TTS alone must not pull microphone, Whisper, or local-polishing dependencies; playback alone must not pull synthesis or inference engines; existing minimal and transcription builds must still work.
-- [ ] Write down the initial audio contract: sample format, sample rate, channel count, interleaving, chunk ownership, ordering, and end-of-stream semantics. Distinguish encoded provider bytes from decoded PCM frames, and state where decoding and resampling occur.
-- [ ] Preserve the existing transcription input format without forcing synthesis and playback through 16 kHz. Carry the actual format explicitly and document supported device conversions.
-- [ ] Sketch cancellation, threading, events, and completion semantics before implementing the first engine. Decide how the synthesis sink relates to the existing capture `AudioSink` rather than accidentally reusing its name for a different contract.
+- [x] Add independent `tts` and `pocket-tts` features while preserving existing `capture`, `workflow`, and default CLI behavior.
+- [ ] Define the additive `playback` feature boundary. Defer a broader feature reorganization unless implementation requires it.
+- [x] Add TTS-only build/dependency checks: cloud and local TTS exclude microphone, Whisper, and local polishing; cloud TTS excludes Pocket inference. Verify existing minimal and workflow builds.
+- [ ] Add playback-only checks that exclude synthesis and inference engines.
+- [x] Document the synthesis audio contract: ordered borrowed mono PCM16 chunks at 24 kHz, consumed or copied before the sink returns. Decode OpenAI little-endian bytes and convert Pocket float samples before delivering PCM; completion means all samples delivered to the sink.
+- [x] Preserve 16 kHz transcription input independently of 24 kHz synthesis and report the synthesis format in metadata.
+- [ ] Document supported playback-device format conversions.
+- [x] Define synthesis cancellation, threading, events, and completion semantics. Use a distinct `SpeechAudioSink` contract alongside the existing capture `AudioSink`.
 
 **Exit criterion:** existing behavior is checked, the first engine is chosen, and the proposed API and feature boundaries are sketched before implementation.
 
 ## Stage 1 — Instrument existing transcription
 
-Establish the transcription baseline with a thin example around existing SDK capabilities.
+Establish the transcription baseline with a thin example around existing SDK capabilities. Microphone capture, live terminal transcripts, Return to finish, and Ctrl-C cancellation already work in the CLI; the unchecked items below track the new instrumented example.
 
 - [ ] Add an example such as `cargo run --example echo_text -- --stream`.
 - [ ] Capture the default microphone using the existing Hear capture machinery.
@@ -84,13 +99,13 @@ Establish the transcription baseline with a thin example around existing SDK cap
 - [ ] Record repeated cold and warmed-up trials separately, including model loading and connection setup where applicable. Retain engine/model, input duration, platform, trial count, and per-run timings so comparisons are reproducible.
 - [ ] Add a smoke test around the example's non-audio orchestration using fake PCM and a fake transcription adapter.
 
-**Exit criterion:** speaking locally produces terminal text reliably, with a clear latency measurement and no TTS code yet.
+**Exit criterion:** speaking locally produces terminal text reliably, with a clear latency measurement.
 
 ## Stage 2 — TTS as a standalone SDK capability
 
 Add speech generation independently of microphone capture.
 
-- [x] Introduce a provider-neutral speech synthesis contract. A provisional blocking shape, with names to be settled in Stage 0:
+- [x] Introduce a provider-neutral speech synthesis contract. The implemented blocking interface is:
 
 ```rust
 pub trait SpeechEngine {
@@ -110,7 +125,10 @@ pub trait SpeechEngine {
 - [x] Keep incremental audio output distinct from incremental text input. The initial request may contain complete text, but sketch how a future session could accept ordered text segments and an explicit end-of-input without requiring the whole assistant answer first. Defer implementation until after the initial milestones.
 - [x] Emit structured synthesis start, first-audio, completion, and cancellation events, with documented ordering and failure behavior.
 - [x] Capture synthesis metadata: selected engine/model/voice, audio duration, request duration, and time to first audio chunk.
-- [x] Implement the first TTS engine.
+- [x] Implement OpenAI TTS with configurable voices and Cedar as the default.
+- [x] Audition and benchmark Kokoro, Pocket TTS, and Piper locally; record results in `docs/tts-comparison.md`.
+- [x] Integrate native Pocket TTS into the Rust binary with configurable voices and Alba as the default, verified model/voice downloads, and an offline cache; no Python runtime is required.
+- [x] Verify native Pocket synthesis, cancellation, engine reuse, sink failures, and cached offline operation.
 - [x] Add a `hear speak "hello"` CLI path or a focused `speak` example.
 - [x] Initially write generated audio to a file so synthesis can be tested independently from playback.
 - [x] Add deterministic tests with a mock HTTP transport and fixture audio.
@@ -121,17 +139,20 @@ pub trait SpeechEngine {
 
 ## Stage 3 — Local audio playback
 
+Partially complete through the CLI's system file player. The native playback SDK and device-level events are still pending.
+
 - [ ] Introduce a `Speaker`/playback abstraction separate from TTS.
-- [ ] Play a known local audio fixture through the default output device.
-- [ ] Play the file generated in Stage 2.
-- [ ] Support cancellation while audio is playing.
+- [x] Play local WAV samples through the default output device on Linux.
+- [x] Play the file generated in Stage 2 using `hear speak --play`.
+- [x] Support CLI playback cancellation through the cancellable system-player process.
+- [ ] Support cancellation in the native playback SDK.
 - [ ] Distinguish audio accepted, samples submitted to the device, and playback finished. Document how buffered device audio affects cancellation and completion; do not promise instantaneous silence.
 - [ ] Handle missing/default-device changes and unsupported formats with useful errors.
 - [ ] Avoid blocking real-time audio callbacks with network, allocation-heavy, or inference work.
 - [ ] Add fake-output tests that verify chunk order, cancellation, and completion without requiring speakers in CI.
 - [ ] Emit structured playback events and document worker/callback responsibilities and format conversion behavior.
 
-**Exit criterion:** `hear speak "hello" --play` (or its chosen equivalent) speaks through the local default audio device.
+**Exit criterion:** the native playback SDK powers `hear speak "hello" --play` (or its chosen equivalent), with documented cancellation and device-level completion semantics. The current system-player implementation already makes the CLI command speak.
 
 ## Stage 4 — One-shot spoken echo through a file
 
@@ -197,12 +218,11 @@ Turn the one-shot experiment into a useful interactive harness.
 
 - [ ] Review naming and ownership of `SpeechEngine`, the synthesis sink, `Speaker`, and session types against the implemented examples.
 - [ ] Review the structured events introduced in earlier stages for consistency; callers must not need to parse terminal output.
-- [ ] Add examples for:
-  - transcribe only
-  - synthesize to file
-  - synthesize and play
-  - one-shot voice echo
-  - repeating voice echo
+- [ ] Add a focused transcribe-only SDK example.
+- [x] Add a synthesize-to-file SDK example (`examples/speak.rs`).
+- [ ] Add a synthesize-and-play SDK example.
+- [ ] Add a one-shot voice echo example.
+- [ ] Add a repeating voice echo example.
 - [ ] Consolidate the threading, blocking behavior, cancellation, and callback-safety documentation introduced with each capability.
 - [ ] Consolidate supported PCM/audio formats and all implicit conversions.
 - [ ] Complete CI coverage using fake capture, transcription, TTS, and playback adapters, plus the minimal/TTS-only/playback-only/existing-workflow feature checks.
@@ -215,7 +235,8 @@ Turn the one-shot experiment into a useful interactive harness.
 This stage is relevant to Cody Link but is not required for the initial echo benchmark.
 
 - [x] Emit incremental transcription events alongside the final result at `finish()` through `Workflow::transcript_updates`.
-- [ ] Distinguish partial transcripts, committed text, and completed conversational turns.
+- [x] Distinguish provisional and committed transcription segments in `TranscriptUpdate`.
+- [ ] Distinguish completed conversational turns from committed transcription segments.
 - [ ] Implement incremental text submission to synthesis using the session contract sketched in Stage 2, with explicit ordering, flush/end-of-input, and cancellation semantics. Keep decisions about assistant response content outside Hear.
 - [ ] Add barge-in: microphone speech cancels or ducks active playback.
 - [ ] Investigate acoustic echo cancellation for speakerphone use without headphones.
@@ -228,7 +249,7 @@ This stage is relevant to Cody Link but is not required for the initial echo ben
 
 ## Suggested implementation order
 
-Complete Stages 0–4 as the first milestone: instrument existing transcription, synthesize to a file, play it, and compose a one-shot spoken echo. Stage 5 is a separate optimization milestone that measures streaming playback against that working baseline.
+With Stage 2 complete, finish the remaining Stage 0 design/verification, Stage 1 transcription timing, and Stage 3 native playback work, then compose Stage 4's one-shot spoken echo. Together these form the first milestone. Stage 5 is a separate optimization milestone that measures streaming playback against that working baseline.
 
 Do not begin automatic turn detection, incremental text submission, barge-in, Android bindings, or NanoClaw integration until the spoken echo and streaming comparison work and their latency is measured. Use those measurements to choose subsequent priorities across endpointing, transcription, synthesis, playback buffering, and network placement; the later stages are a roadmap rather than a commitment to build every capability immediately.
 
